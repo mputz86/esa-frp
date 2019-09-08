@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: bcfcada682f4d213569a0f73020626759149e5bb96dcc0963c90262b9b228f20
+-- hash: b26832c78e54a28703530924b2c6f6e395823063c68bff31b8371392644c7c92
 
 name:           esa-reflex
 version:        0.1.0.0
@@ -29,6 +29,7 @@ library
       Paths_esa_reflex
   hs-source-dirs:
       src
+  ghc-options: -O2
   build-depends:
       QuickCheck
     , base >=4.7 && <5
@@ -40,6 +41,7 @@ library
     , reflex-basic-host
     , stm
     , text
+    , time
   default-language: Haskell2010
 
 executable esa-reflex-exe
@@ -61,6 +63,7 @@ executable esa-reflex-exe
     , reflex-basic-host
     , stm
     , text
+    , time
   default-language: Haskell2010
 
 test-suite esa-reflex-test
@@ -83,4 +86,5 @@ test-suite esa-reflex-test
     , reflex-basic-host
     , stm
     , text
+    , time
   default-language: Haskell2010

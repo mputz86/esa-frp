@@ -29,10 +29,13 @@ dependencies:
 - reflex-basic-host
 - stm
 - text
+- time
 - QuickCheck
 
 library:
   source-dirs: src
+  ghc-options:
+  - -O2
 
 executables:
   esa-reflex-exe:
@@ -40,6 +43,7 @@ executables:
     source-dirs:         app
     ghc-options:
     - -threaded
+    - -O2
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:

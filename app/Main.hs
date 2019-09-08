@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -19,13 +20,20 @@ import qualified Data.Char as C
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
+import           Data.Time
+import qualified Prelude (Show, show)
 import           Reflex
 import           Reflex.Host.Basic
 import qualified Test.QuickCheck.Gen as Q
 
+
 newtype Bogous = Bogous
     { unBogous :: Text
     } deriving (Show)
+
+instance Prelude.Show (Bounds Bogous) where
+    show (Bounds (Bogous l) (Bogous h)) = show (T.length l, T.length h)
+
 
 instance Eq Bogous where
     (==) = (==) `on` T.length . unBogous
@@ -67,6 +75,8 @@ data Bounds r = Bounds
     { boundsLow :: Calibrated r
     , boundsHigh :: Calibrated r
     }
+
+-- deriving instance (Show r, Show (Calibrated r)) => Show (ProcessingOutput r)
 
 -- | State of the limits.
 type ActualLimits r = Map LimitTag (Bounds r)
@@ -128,7 +138,7 @@ updateLimits :: InputLimit r -> ActualLimits r -> ActualLimits r
 updateLimits (InputLimit t v) = M.insert t v
 
 setupNetwork
-    :: (BasicGuestConstraints t m, Show (CalibrationCoefficient r), Show r, Ord (Calibrated r))
+    :: (BasicGuestConstraints t m, Show r, Show (Bounds r), Show (CalibrationCoefficient r), Show r, Ord (Calibrated r))
     => ProcessingConfig r
     -> ProcessingInitial r
     -> BasicGuest t m (Event t ())
@@ -159,16 +169,27 @@ setupNetwork
     pure killE
 
 bogousGen :: Q.Gen Bogous
-bogousGen = Bogous . toS <$> replicateM 10 (Q.elements "abc")
+bogousGen = Bogous . toS <$> do
+    l <- Q.elements [1 .. 10]
+    replicateM l (Q.elements "abc")
+
+inputLimitGen :: Q.Gen (InputLimit Bogous)
+inputLimitGen = do
+    t <- LimitTag . toS <$> Q.elements ["key1", "key2", "key3"]
+    low <- Bogous . toS . flip replicate 'x' <$> Q.elements [1 .. 5]
+    high <- Bogous . toS . flip replicate 'x' <$> Q.elements [5 .. 10]
+    pure $ InputLimit t (Bounds low high)
 
 main :: IO ()
 main = do
     valueChan <- newTChanIO
     calibrationChan <- newTChanIO
+    limitChan <- newTChanIO
+    count <- newTVarIO 0
     let 
         valueSource :: IO ()
         valueSource = do
-            threadDelay 100000 
+            threadDelay 100000
             b <- Q.generate bogousGen
             atomically $ writeTChan valueChan b
             valueSource
@@ -180,17 +201,30 @@ main = do
             atomically $ writeTChan calibrationChan b
             calibrateSource
 
+        limitSource :: IO ()
+        limitSource = do
+            threadDelay 500000
+            b <- Q.generate inputLimitGen
+            atomically $ writeTChan limitChan b
+            limitSource
+
         c = ProcessingConfig
                 (threadDelay 10000000)
                 calibrateBogous
                 (atomically $ readTChan valueChan)
                 (atomically $ readTChan calibrationChan)
-                (atomically retry)
-                print
+                (atomically $ readTChan limitChan)
+                (const $ atomically . modifyTVar count $ succ)
         i :: ProcessingInitial Bogous
         i = ProcessingInitial 'a' mempty
     forkIO valueSource
     forkIO calibrateSource
+    forkIO limitSource
 
+    tStart <- getCurrentTime
     basicHostWithQuit (setupNetwork c i)
+    tEnd <- getCurrentTime
+    print $ diffUTCTime tEnd tStart
+    resultCount <- atomically $ readTVar count
+    print resultCount
 
