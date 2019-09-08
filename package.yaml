@@ -29,6 +29,7 @@ dependencies:
 - reflex-basic-host
 - stm
 - text
+- QuickCheck
 
 library:
   source-dirs: src

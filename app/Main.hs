@@ -15,11 +15,13 @@ import           Control.Concurrent
 import           Control.Concurrent.STM
 import           Control.Monad.Fix
 import           Control.Monad.Trans
+import qualified Data.Char as C
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import           Reflex
 import           Reflex.Host.Basic
+import qualified Test.QuickCheck.Gen as Q
 
 newtype Bogous = Bogous
     { unBogous :: Text
@@ -32,9 +34,10 @@ instance Ord Bogous where
     compare = comparing $ T.length . unBogous
 
 calibrateBogous :: CalibrationModel Bogous
-calibrateBogous l (Bogous t) = Bogous
+calibrateBogous l (Bogous t) = Bogous $ T.map (\c -> if c == l then C.toUpper c
+                                                               else c) t
 
-type instance CalibrationCoefficient Bogous = Int
+type instance CalibrationCoefficient Bogous = Char
 
 type instance Calibrated Bogous = Bogous
 
@@ -125,7 +128,7 @@ updateLimits :: InputLimit r -> ActualLimits r -> ActualLimits r
 updateLimits (InputLimit t v) = M.insert t v
 
 setupNetwork
-    :: (BasicGuestConstraints t m, Show r, Ord (Calibrated r))
+    :: (BasicGuestConstraints t m, Show (CalibrationCoefficient r), Show r, Ord (Calibrated r))
     => ProcessingConfig r
     -> ProcessingInitial r
     -> BasicGuest t m (Event t ())
@@ -155,28 +158,39 @@ setupNetwork
 
     pure killE
 
+bogousGen :: Q.Gen Bogous
+bogousGen = Bogous . toS <$> replicateM 10 (Q.elements "abc")
 
 main :: IO ()
 main = do
-    chan <- newTChanIO
+    valueChan <- newTChanIO
+    calibrationChan <- newTChanIO
     let 
-        valueSource :: Bogous -> IO ()
-        valueSource n = do
+        valueSource :: IO ()
+        valueSource = do
             threadDelay 100000 
-            atomically $ writeTChan chan n
-            valueSource (succ n)
+            b <- Q.generate bogousGen
+            atomically $ writeTChan valueChan b
+            valueSource
+
+        calibrateSource :: IO ()
+        calibrateSource = do
+            threadDelay 1000000 
+            b <- Q.generate $ Q.elements "abc"
+            atomically $ writeTChan calibrationChan b
+            calibrateSource
 
         c = ProcessingConfig
                 (threadDelay 10000000)
-                (const identity)
-                (atomically $ readTChan chan)
-                (atomically retry)
+                calibrateBogous
+                (atomically $ readTChan valueChan)
+                (atomically $ readTChan calibrationChan)
                 (atomically retry)
                 print
         i :: ProcessingInitial Bogous
-        i = ProcessingInitial
-                ()
-                mempty
-    forkIO $ valueSource (Bogous 0)
+        i = ProcessingInitial 'a' mempty
+    forkIO valueSource
+    forkIO calibrateSource
+
     basicHostWithQuit (setupNetwork c i)
 
