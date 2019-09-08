@@ -17,15 +17,28 @@ import           Control.Monad.Fix
 import           Control.Monad.Trans
 import qualified Data.Map as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import           Reflex
 import           Reflex.Host.Basic
 
-newtype Bogous = Bogous Int
-    deriving (Eq, Enum, Ord, Show)
+newtype Bogous = Bogous
+    { unBogous :: Text
+    } deriving (Show)
 
-type instance CalibrationCoefficient Bogous = ()
+instance Eq Bogous where
+    (==) = (==) `on` T.length . unBogous
+
+instance Ord Bogous where
+    compare = comparing $ T.length . unBogous
+
+calibrateBogous :: CalibrationModel Bogous
+calibrateBogous l (Bogous t) = Bogous
+
+type instance CalibrationCoefficient Bogous = Int
 
 type instance Calibrated Bogous = Bogous
+
+-------------------------------------------------------------------------------
 
 type CalibrationModel r = CalibrationCoefficient r -> r -> Calibrated r
 
@@ -117,30 +130,30 @@ setupNetwork
     -> ProcessingInitial r
     -> BasicGuest t m (Event t ())
 setupNetwork
-    (ProcessingConfig killProcess calibrationModel getRawValue getCoefficient getLimit pushResult)
-    (ProcessingInitial initialCoefficient initialLimits) = do
+        (ProcessingConfig killProcess calibrationModel getRawValue getCoefficient getLimit pushResult)
+        (ProcessingInitial initialCoefficient initialLimits) = do
 
-  (rawE, sendRaw) <- newTriggerEvent
-  (coefficientE, sendCoefficient) <- newTriggerEvent
-  (limitE, sendLimit) <- newTriggerEvent
-  (killE, sendKill) <- newTriggerEvent
+    (rawE, sendRaw) <- newTriggerEvent
+    (coefficientE, sendCoefficient) <- newTriggerEvent
+    (limitE, sendLimit) <- newTriggerEvent
+    (killE, sendKill) <- newTriggerEvent
 
-  -- FIXME Threads must be stopped.
-  threadIdKill <- liftIO $ forkIO $ forever $ killProcess >>= sendKill
-  threadIdRaw <- liftIO $ forkIO $ forever $ getRawValue >>= sendRaw
-  threadIdCoefficient <- liftIO $ forkIO $ forever $ getCoefficient >>= sendCoefficient
-  threadIdLimit <- liftIO $ forkIO $ forever $ getLimit >>= sendLimit
+    -- FIXME Threads must be stopped.
+    threadIdKill <- liftIO $ forkIO $ forever $ killProcess >>= sendKill
+    threadIdRaw <- liftIO $ forkIO $ forever $ getRawValue >>= sendRaw
+    threadIdCoefficient <- liftIO $ forkIO $ forever $ getCoefficient >>= sendCoefficient
+    threadIdLimit <- liftIO $ forkIO $ forever $ getLimit >>= sendLimit
 
-  coefficientD <- holdDyn initialCoefficient coefficientE
-  limitD <- foldDyn updateLimits initialLimits limitE
+    coefficientD <- holdDyn initialCoefficient coefficientE
+    limitD <- foldDyn updateLimits initialLimits limitE
 
-  let resultE = processNetwork calibrationModel rawE coefficientD limitD
-  performEvent_ $ liftIO . pushResult <$> resultE
+    let resultE = processNetwork calibrationModel rawE coefficientD limitD
+    performEvent_ $ liftIO . pushResult <$> resultE
 
-  let threadIds = [threadIdKill, threadIdRaw, threadIdCoefficient, threadIdLimit]
-  performEvent_ $ liftIO (mapM_ killThread threadIds) <$ killE
+    let threadIds = [threadIdKill, threadIdRaw, threadIdCoefficient, threadIdLimit]
+    performEvent_ $ liftIO (mapM_ killThread threadIds) <$ killE
 
-  pure killE
+    pure killE
 
 
 main :: IO ()
