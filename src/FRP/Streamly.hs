@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module MainStreamly where
+module FRP.Streamly  where
 
 import           Protolude
 
@@ -20,7 +20,7 @@ import           Streamly
 import qualified Streamly.Prelude as S
 import qualified Test.QuickCheck.Gen as Q
 
-import           Model
+import           FRP.Model
 
 data Status r = Status
     { statusCalibrationModel :: CalibrationModel r

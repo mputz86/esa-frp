@@ -1,5 +1,6 @@
+
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, StandaloneDeriving, FlexibleInstances, TypeFamilies, GeneralizedNewtypeDeriving #-}
 
 module Main where
 
@@ -10,18 +11,43 @@ import qualified Data.Text as T
 import           Data.Time
 import qualified Test.QuickCheck.Gen as Q
 
-import qualified MainReflex as R
-import qualified MainStreamly as S
-import           Model
+import qualified FRP.Reflex as R
+import qualified FRP.Streamly as S
+import           FRP.Model
+import Control.Concurrent.STM.TBChan
+import qualified Prelude
+import qualified Data.Char as C
 
+newtype Bogous = Bogous
+    { unBogous :: Text
+    } deriving (Show, NFData)
+
+instance Prelude.Show (Bounds Bogous) where
+    show (Bounds (Bogous l) (Bogous h)) = show (T.length l, T.length h)
+
+deriving instance Prelude.Show (InputLimit Bogous)
+
+instance Eq Bogous where
+    (==) = (==) `on` T.length . unBogous
+
+instance Ord Bogous where
+    compare = comparing $ T.length . unBogous
+
+calibrateBogous :: CalibrationModel Bogous
+calibrateBogous l (Bogous t) = Bogous $ T.map (\c -> if c == l then C.toUpper c
+                                                               else c) t
+
+type instance CalibrationCoefficient Bogous = Char
+
+type instance Calibrated Bogous = Bogous
 
 bogousGen :: Q.Gen Bogous
 bogousGen = Bogous . toS <$> do
     l <- Q.elements [1 .. 10]
     replicateM l (Q.elements "abc")
 
-inputLimitGen :: Q.Gen (InputLimit Bogous)
-inputLimitGen = do
+limitGen :: Q.Gen (InputLimit Bogous)
+limitGen = do
     t <- LimitTag . toS <$> Q.elements ["key1", "key2", "key3"]
     low <- Bogous . toS . flip replicate 'x' <$> Q.elements [1 .. 5]
     high <- Bogous . toS . flip replicate 'x' <$> Q.elements [5 .. 10]
@@ -29,6 +55,7 @@ inputLimitGen = do
 
 data RunConfig = RunConfig
     { valueDelay :: Int
+    , chanBound :: Int
     , calibrateDelay :: Int
     , limitDelay :: Int
     , runTime :: Int
@@ -41,59 +68,49 @@ main = do
     -- Streamly can run this for max performance. Reflex hangs, since it catches up.
     -- let c = RunConfig 0 100000 500000 10000000 True 100000
     -- Runs pretty well for both.
-    let c = RunConfig 10 100000 500000 10000000 True 5000
+    let c = RunConfig 1 100 100000 500000 10000000 True 100000
 
     -- Run with Reflex.
-    run c R.runNetwork
+    run c S.runNetwork
     -- Run with Streamly.
-    --run c S.runNetwork
+    run c R.runNetwork
+
+valueSource :: NFData a => Int  -- ^ delay
+            -> Maybe a
+            -> TBChan a
+            -> Q.Gen a
+            -> IO ()
+valueSource delay genOrNot valueChan gen = forever $ do
+    threadDelay delay
+    b <- case genOrNot of
+        Nothing -> Q.generate gen
+        Just x -> pure x
+    atomically $ writeTBChan valueChan b
 
 run :: RunConfig -> (ProcessingConfig Bogous -> ProcessingInitial Bogous -> IO ()) -> IO ()
 run RunConfig{..} networkRunner = do
-    valueChan <- newTChanIO
-    calibrationChan <- newTChanIO
-    limitChan <- newTChanIO
-    count <- newTVarIO 0
+    valueChan       <- newTBChanIO chanBound
+    calibrateChan   <- newTBChanIO chanBound
+    limitChan       <- newTBChanIO chanBound
+    count           <- newTVarIO 0
     let 
-        constValue = Bogous $ T.pack "abcabcabc"
-        valueSource :: IO ()
-        valueSource = do
-            threadDelay valueDelay
-            b <- if genBogous then Q.generate bogousGen
-                              else pure constValue
-            atomically $ writeTChan valueChan b
-            valueSource
-
-        calibrateSource :: IO ()
-        calibrateSource = do
-            threadDelay calibrateDelay
-            b <- Q.generate $ Q.elements "abc"
-            atomically $ writeTChan calibrationChan b
-            calibrateSource
-
-        limitSource :: IO ()
-        limitSource = do
-            threadDelay limitDelay
-            b <- Q.generate inputLimitGen
-            atomically $ writeTChan limitChan b
-            limitSource
-
         c = ProcessingConfig
                 (threadDelay runTime)
                 calibrateBogous
-                (atomically $ readTChan valueChan)
-                (atomically $ readTChan calibrationChan)
-                (atomically $ readTChan limitChan)
-                (\r -> do
+                (atomically $ readTBChan valueChan)
+                (atomically $ readTBChan calibrateChan)
+                (atomically $ readTBChan limitChan)
+                (\r -> deepseq r $ do
                     c <- readTVarIO count 
                     if c `mod` sampleEveryValue == 0 then print r
                                                      else pure ()
                     atomically . modifyTVar count $ succ)
         i :: ProcessingInitial Bogous
         i = ProcessingInitial 'a' mempty
-    threadIdValue <- forkIO valueSource
-    threadIdCalibrate <- forkIO calibrateSource
-    threadIdLimit <- forkIO limitSource
+
+    threadIdValue     <- forkIO $ valueSource valueDelay Nothing valueChan bogousGen
+    threadIdCalibrate <- forkIO $ valueSource calibrateDelay Nothing calibrateChan $ Q.elements "abc"
+    threadIdLimit     <- forkIO $ valueSource limitDelay Nothing limitChan limitGen
 
     tStart <- getCurrentTime
     networkRunner c i

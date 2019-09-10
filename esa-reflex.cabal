@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: bbcb53a4a5399fbf718485900b94b7d5a7d367baae614ea19f9eebf9defbf314
+-- hash: a0354159adc6479ad81e88e8b93c06762f6f614ec9699f37f344dae916cc7912
 
 name:           esa-reflex
 version:        0.1.0.0
@@ -25,6 +25,10 @@ source-repository head
   location: https://github.com/githubuser/esa-reflex
 
 library
+  exposed-modules:
+      FRP.Model
+      FRP.Reflex
+      FRP.Streamly
   other-modules:
       Paths_esa_reflex
   hs-source-dirs:
@@ -40,20 +44,16 @@ library
     , reflex
     , reflex-basic-host
     , stm
+    , stm-chans
     , streamly
     , text
     , time
   default-language: Haskell2010
 
-executable esa-reflex-exe
-  main-is: Main.hs
+executable esa-frp
+  main-is: app/Main.hs
   other-modules:
-      MainReflex
-      MainStreamly
-      Model
       Paths_esa_reflex
-  hs-source-dirs:
-      app
   ghc-options: -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -66,30 +66,7 @@ executable esa-reflex-exe
     , reflex
     , reflex-basic-host
     , stm
-    , streamly
-    , text
-    , time
-  default-language: Haskell2010
-
-test-suite esa-reflex-test
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  other-modules:
-      Paths_esa_reflex
-  hs-source-dirs:
-      test
-  ghc-options: -O2 -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      QuickCheck
-    , base >=4.7 && <5
-    , containers
-    , esa-reflex
-    , mtl
-    , protolude
-    , random
-    , reflex
-    , reflex-basic-host
-    , stm
+    , stm-chans
     , streamly
     , text
     , time

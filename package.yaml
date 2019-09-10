@@ -32,6 +32,7 @@ dependencies:
 - text
 - time
 - QuickCheck
+- stm-chans
 
 library:
   source-dirs: src
@@ -39,9 +40,8 @@ library:
   - -O2
 
 executables:
-  esa-reflex-exe:
-    main:                Main.hs
-    source-dirs:         app
+  esa-frp:
+    main:                app/Main.hs
     ghc-options:
     - -O2
     - -threaded
@@ -50,15 +50,5 @@ executables:
     dependencies:
     - esa-reflex
 
-tests:
-  esa-reflex-test:
-    main:                Spec.hs
-    source-dirs:         test
-    ghc-options:
-    - -O2
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - esa-reflex
+
 

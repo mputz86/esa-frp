@@ -4,10 +4,10 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances, DeriveGeneric #-}
 
 
-module Model where
+module FRP.Model where
 
 import           Protolude
 
@@ -15,7 +15,6 @@ import           Control.Concurrent
 import           Control.Concurrent.STM
 import           Control.Monad.Fix
 import           Control.Monad.Trans
-import qualified Data.Char as C
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -26,28 +25,6 @@ import           Reflex.Host.Basic
 import qualified Test.QuickCheck.Gen as Q
 
 
-newtype Bogous = Bogous
-    { unBogous :: Text
-    } deriving (Show)
-
-instance Prelude.Show (Bounds Bogous) where
-    show (Bounds (Bogous l) (Bogous h)) = show (T.length l, T.length h)
-
-deriving instance Prelude.Show (InputLimit Bogous)
-
-instance Eq Bogous where
-    (==) = (==) `on` T.length . unBogous
-
-instance Ord Bogous where
-    compare = comparing $ T.length . unBogous
-
-calibrateBogous :: CalibrationModel Bogous
-calibrateBogous l (Bogous t) = Bogous $ T.map (\c -> if c == l then C.toUpper c
-                                                               else c) t
-
-type instance CalibrationCoefficient Bogous = Char
-
-type instance Calibrated Bogous = Bogous
 
 -------------------------------------------------------------------------------
 
@@ -74,7 +51,8 @@ data ProcessingInitial r = ProcessingInitial
 data Bounds r = Bounds 
     { boundsLow :: Calibrated r
     , boundsHigh :: Calibrated r
-    }
+    } deriving Generic
+instance NFData (Calibrated r) => NFData (Bounds r)
 
 -- deriving instance (Show r, Show (Calibrated r)) => Show (ProcessingOutput r)
 
@@ -82,15 +60,20 @@ data Bounds r = Bounds
 type ActualLimits r = Map LimitTag (Bounds r)
 
 newtype LimitTag = LimitTag Text
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Generic)
+instance NFData LimitTag
 
 -- | Updating the actual limits.
 data InputLimit r = InputLimit
     { inputTag :: LimitTag
     , inputBounds :: Bounds r
-    }
+    } deriving Generic
+instance (NFData (Calibrated r),NFData r) => NFData (InputLimit r)
 
-data LimitCheck = InLimit | SoftLimitExceeded | HardLimitExceeded
+
+data LimitCheck = InLimit | SoftLimitExceeded | HardLimitExceeded deriving Generic
+
+instance NFData LimitCheck
 
 type LimitExceedings = Set LimitTag
 
@@ -98,7 +81,8 @@ data ProcessingOutput r = ProcessingOutput
     { rawValue :: r
     , calibratedValue :: Calibrated r
     , limitExceedings :: LimitExceedings
-    }
+    } deriving Generic
+instance (NFData (Calibrated r),NFData r) => NFData (ProcessingOutput r)
 
 deriving instance (Show r, Show (Calibrated r)) => Show (ProcessingOutput r)
 

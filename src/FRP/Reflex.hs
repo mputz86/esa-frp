@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module MainReflex where
+module FRP.Reflex where
 
 
 import           Protolude
@@ -23,7 +23,7 @@ import qualified Prelude (Show, show)
 import           Reflex
 import           Reflex.Host.Basic
 
-import           Model
+import           FRP.Model
 
 
 processNetwork
