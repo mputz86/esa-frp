@@ -1,26 +1,32 @@
 
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE RecordWildCards, StandaloneDeriving, FlexibleInstances, TypeFamilies, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Main where
 
+import           Control.Concurrent.STM
+import           Control.Concurrent.STM.TBChan
+
+import qualified Data.Char                     as C
+import qualified Data.Text                     as T
+import           Data.Time
+
+import           FRP.Model
+import qualified FRP.Reflex                    as R
+import qualified FRP.Streamly                  as S
+
+import qualified Prelude
+
 import           Protolude
 
-import           Control.Concurrent.STM
-import qualified Data.Text as T
-import           Data.Time
-import qualified Test.QuickCheck.Gen as Q
+import qualified Test.QuickCheck.Gen           as Q
 
-import qualified FRP.Reflex as R
-import qualified FRP.Streamly as S
-import           FRP.Model
-import Control.Concurrent.STM.TBChan
-import qualified Prelude
-import qualified Data.Char as C
-
-newtype Bogous = Bogous
-    { unBogous :: Text
-    } deriving (Show, NFData)
+newtype Bogous = Bogous { unBogous :: Text }
+  deriving (Show, NFData)
 
 instance Prelude.Show (Bounds Bogous) where
     show (Bounds (Bogous l) (Bogous h)) = show (T.length l, T.length h)
@@ -34,8 +40,8 @@ instance Ord Bogous where
     compare = comparing $ T.length . unBogous
 
 calibrateBogous :: CalibrationModel Bogous
-calibrateBogous l (Bogous t) = Bogous $ T.map (\c -> if c == l then C.toUpper c
-                                                               else c) t
+calibrateBogous l (Bogous t) = Bogous $ T.map
+    (\c -> if c == l then C.toUpper c else c) t
 
 type instance CalibrationCoefficient Bogous = Char
 
@@ -54,12 +60,12 @@ limitGen = do
     pure $ InputLimit t (Bounds low high)
 
 data RunConfig = RunConfig
-    { valueDelay :: Int
-    , chanBound :: Int
-    , calibrateDelay :: Int
-    , limitDelay :: Int
-    , runTime :: Int
-    , genBogous :: Bool
+    { valueDelay       :: Int
+    , chanBound        :: Int
+    , calibrateDelay   :: Int
+    , limitDelay       :: Int
+    , runTime          :: Int
+    , genBogous        :: Bool
     , sampleEveryValue :: Int
     }
 
@@ -75,7 +81,8 @@ main = do
     -- Run with Streamly.
     run c R.runNetwork
 
-valueSource :: NFData a => Int  -- ^ delay
+valueSource :: NFData a
+            => Int  -- ^ delay
             -> Maybe a
             -> TBChan a
             -> Q.Gen a
@@ -84,41 +91,43 @@ valueSource delay genOrNot valueChan gen = forever $ do
     threadDelay delay
     b <- case genOrNot of
         Nothing -> Q.generate gen
-        Just x -> pure x
+        Just x  -> pure x
     atomically $ writeTBChan valueChan b
 
-run :: RunConfig -> (ProcessingConfig Bogous -> ProcessingInitial Bogous -> IO ()) -> IO ()
-run RunConfig{..} networkRunner = do
-    valueChan       <- newTBChanIO chanBound
-    calibrateChan   <- newTBChanIO chanBound
-    limitChan       <- newTBChanIO chanBound
-    count           <- newTVarIO 0
-    let 
-        c = ProcessingConfig
-                (threadDelay runTime)
-                calibrateBogous
+run :: RunConfig
+    -> (ProcessingConfig Bogous -> ProcessingInitial Bogous -> IO ())
+    -> IO ()
+run RunConfig
+    { .. } networkRunner = do
+        valueChan <- newTBChanIO chanBound
+        calibrateChan <- newTBChanIO chanBound
+        limitChan <- newTBChanIO chanBound
+        count <- newTVarIO 0
+        let c = ProcessingConfig (threadDelay runTime) calibrateBogous
                 (atomically $ readTBChan valueChan)
                 (atomically $ readTBChan calibrateChan)
                 (atomically $ readTBChan limitChan)
                 (\r -> deepseq r $ do
-                    c <- readTVarIO count 
-                    if c `mod` sampleEveryValue == 0 then print r
-                                                     else pure ()
-                    atomically . modifyTVar count $ succ)
-        i :: ProcessingInitial Bogous
-        i = ProcessingInitial 'a' mempty
+                     c <- readTVarIO count
+                     if c `mod` sampleEveryValue == 0 then print r else pure ()
+                     atomically . modifyTVar count $ succ)
+            i :: ProcessingInitial Bogous
+            i = ProcessingInitial 'a' mempty
 
-    threadIdValue     <- forkIO $ valueSource valueDelay Nothing valueChan bogousGen
-    threadIdCalibrate <- forkIO $ valueSource calibrateDelay Nothing calibrateChan $ Q.elements "abc"
-    threadIdLimit     <- forkIO $ valueSource limitDelay Nothing limitChan limitGen
+        threadIdValue
+            <- forkIO $ valueSource valueDelay Nothing valueChan bogousGen
+        threadIdCalibrate <- forkIO
+            $ valueSource calibrateDelay Nothing calibrateChan $ Q.elements "abc"
+        threadIdLimit
+            <- forkIO $ valueSource limitDelay Nothing limitChan limitGen
 
-    tStart <- getCurrentTime
-    networkRunner c i
-    tEnd <- getCurrentTime
-    print $ diffUTCTime tEnd tStart
-    resultCount <- atomically $ readTVar count
-    print resultCount
+        tStart <- getCurrentTime
+        networkRunner c i
+        tEnd <- getCurrentTime
+        print $ diffUTCTime tEnd tStart
+        resultCount <- atomically $ readTVar count
+        print resultCount
 
-    killThread threadIdLimit
-    killThread threadIdCalibrate
-    killThread threadIdValue
+        killThread threadIdLimit
+        killThread threadIdCalibrate
+        killThread threadIdValue
