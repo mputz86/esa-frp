@@ -1,3 +1,14 @@
+-- |
+-- Module      :  FRP.Model
+-- Copyright   :  Paolo Veronelli, Matthias Putz, 2019
+-- License     :  BSD3
+--
+-- Maintainer  :  paolo.veronelli@gmail.com
+-- Stability   :  experimental
+-- Portability :  unknown
+--
+-- A model to express live parameter refinement 
+--
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -29,24 +40,37 @@ import           Reflex.Host.Basic
 import qualified Test.QuickCheck.Gen    as Q
 
 -------------------------------------------------------------------------------
+-- | model for calibration of values of type 'r'
 type CalibrationModel r = CalibrationCoefficient r -> r -> Calibrated r
 
+-- | type of the calibrated parameter
 type family Calibrated r
 
+-- | signal type parameter for calibration
 type family CalibrationCoefficient r
 
+-- | full configuration of the process
 data ProcessingConfig r = ProcessingConfig
     { killProcess :: IO ()
+    -- ^ when to stop the process
     , calibrationModel :: CalibrationModel r
+    -- ^ the chosen calibration model
     , pullRawParameter :: IO r
+    -- ^ how to wait for a row parameter
     , pullCalibrationCoefficient :: IO (CalibrationCoefficient r)
+    -- ^ how to wait for a calibration coefficient change
     , pullLimit :: IO (InputLimit r)
+    -- ^ how to wait for a single limit change
     , pushResult :: ProcessingOutput r -> IO ()
+    -- ^ how to push results, dangerous if slower than pullRawParameter
     }
 
+-- | initial values for the process
 data ProcessingInitial r = ProcessingInitial
     { initialCalibrationCoefficient :: CalibrationCoefficient r
+    -- ^ initial calibration coefficient value
     , initialLimits :: ActualLimits r
+    -- ^ inital map of limits
     }
 
 data Bounds r
