@@ -61,6 +61,34 @@ packages:
   original:
     hackage: monoidal-containers-0.6@sha256:73067b83e50be95bedb79ab78f5d90c8530aaea7473d8b19f58aeba3ca4393cc,2566
 - completed:
+    hackage: optics-0.1@sha256:24db374984af1a6f0b4fb51479c40d76a84686d543d85de30535f7ba6c811ac5,5646
+    pantry-tree:
+      size: 951
+      sha256: 683e2123b7028c7284bb2fa30f851d7433dbff9b5770695b31478e36e9fa0ec4
+  original:
+    hackage: optics-0.1@sha256:24db374984af1a6f0b4fb51479c40d76a84686d543d85de30535f7ba6c811ac5,5646
+- completed:
+    hackage: optics-core-0.1@sha256:301a7ec522495868a8969a6ad74913c569a1492ba455e5f3c6fcc65f16f500ca,4402
+    pantry-tree:
+      size: 4983
+      sha256: b5609030c5aae396e3fc9dd434fecebcdd59daaac411005fa05e24b52d63abb9
+  original:
+    hackage: optics-core-0.1@sha256:301a7ec522495868a8969a6ad74913c569a1492ba455e5f3c6fcc65f16f500ca,4402
+- completed:
+    hackage: optics-extra-0.1@sha256:1ade88aef7931e547f4f0c22f1d92b552009f4389c2e43674c34e644e99af5c6,3162
+    pantry-tree:
+      size: 1757
+      sha256: e58f943d87af43cbc1571425e07ecb9c4f5c50ab103d4e0e4e4abef2e7a42223
+  original:
+    hackage: optics-extra-0.1@sha256:1ade88aef7931e547f4f0c22f1d92b552009f4389c2e43674c34e644e99af5c6,3162
+- completed:
+    hackage: optics-th-0.1@sha256:9b465554bdebad9715e35924a1439a3f2739c78bf84a0e3b9aace553eb30850c,1911
+    pantry-tree:
+      size: 601
+      sha256: 3894e5f5aebd73a3ee87ab8a94443ddd1f9a16ab065035d32ba19edce388c394
+  original:
+    hackage: optics-th-0.1@sha256:9b465554bdebad9715e35924a1439a3f2739c78bf84a0e3b9aace553eb30850c,1911
+- completed:
     hackage: ref-tf-0.4.0.1@sha256:369e5c6237e4b6fe330fde021b94a9f98971690cbec5b910faa9af3cbcb15610,1133
     pantry-tree:
       size: 211
