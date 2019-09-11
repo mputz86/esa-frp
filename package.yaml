@@ -33,6 +33,7 @@ dependencies:
 - time
 - QuickCheck
 - stm-chans
+- optics
 
 library:
   source-dirs: src

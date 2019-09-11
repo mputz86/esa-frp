@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeSynonymInstances, TemplateHaskell #-}
 
 module FRP.Streamly where
 
@@ -20,18 +20,21 @@ import           FRP.Model
 
 import qualified Prelude                (Show, show)
 
-import           Protolude
+import           Protolude hiding (to)
 
 import           Streamly
 import qualified Streamly.Prelude       as S
 
 import qualified Test.QuickCheck.Gen    as Q
+import Optics
+import Optics.State.Operators
 
 data Status r = Status
-    { statusCalibrationModel       :: CalibrationModel r
-    , statusCalibrationCoefficient :: CalibrationCoefficient r
-    , statusActualLimits           :: ActualLimits r
+    { _statusCalibrationModel       :: CalibrationModel r
+    , _statusCalibrationCoefficient :: CalibrationCoefficient r
+    , _statusActualLimits           :: ActualLimits r
     }
+makeLenses ''Status
 
 data Event r = RawValue r
              | UpdateCalibrationCoefficient (CalibrationCoefficient r)
@@ -73,15 +76,11 @@ setupNetwork c@(ProcessingConfig killProcess _ _ _ _ pushResult) = do
             liftIO $ pushResult r
             return $ OutputResult r
         InputEvent (UpdateCalibrationCoefficient nc) -> do
-            Status m co l <- get
-            let ns = Status m nc l
-            put ns
-            return $ Updated ns
+            statusCalibrationCoefficient .= nc
+            gets Updated
         InputEvent (UpdateLimit nl) -> do
-            Status m co l <- get
-            let ns = Status m co (updateLimits nl l)
-            put ns
-            return $ Updated ns
+            statusActualLimits %= updateLimits nl 
+            gets Updated
         Kill -> return Quit
 
 runNetwork :: (Ord (Calibrated r), Show (CalibrationCoefficient r))
@@ -92,7 +91,7 @@ runNetwork c (ProcessingInitial initialCoefficient initialLimits) = do
     print "Run with Streamly"
     let r = S.runWhile isAlive (setupNetwork c)
     void $ runStateT r
-        (Status (calibrationModel c) initialCoefficient initialLimits)
+        $ Status (calibrationModel c) initialCoefficient initialLimits
 
 isAlive Quit = False
 isAlive _ = True

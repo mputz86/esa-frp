@@ -51,29 +51,31 @@ setupNetwork :: ( BasicGuestConstraints t m
 setupNetwork (ProcessingConfig killProcess calibrationModel getRawValue
               getCoefficient getLimit pushResult)
     (ProcessingInitial initialCoefficient initialLimits) = do
-        (rawE, sendRaw) <- newTriggerEvent
+        (rawE, sendRaw)                 <- newTriggerEvent
         (coefficientE, sendCoefficient) <- newTriggerEvent
-        (limitE, sendLimit) <- newTriggerEvent
-        (killE, sendKill) <- newTriggerEvent
+        (limitE, sendLimit)             <- newTriggerEvent
+        (killE, sendKill)               <- newTriggerEvent
 
-        threadIdKill <- liftIO $ forkIO $ forever $ killProcess >>= sendKill
-        threadIdRaw <- liftIO $ forkIO $ forever $ getRawValue >>= sendRaw
-        threadIdCoefficient
-            <- liftIO $ forkIO $ forever $ getCoefficient >>= sendCoefficient
-        threadIdLimit <- liftIO $ forkIO $ forever $ getLimit >>= sendLimit
+        killThreads <- liftIO $  do
+            threadIdKill <- forkIO $ forever $ killProcess >>= sendKill
+            threadIdRaw  <- forkIO $ forever $ getRawValue >>= sendRaw
+            threadIdCoefficient <- forkIO $ forever $ getCoefficient >>= sendCoefficient
+            threadIdLimit <- liftIO $ forkIO $ forever $ getLimit >>= sendLimit
+            pure $ mapM_ killThread 
+                [ threadIdKill
+                , threadIdRaw
+                , threadIdCoefficient
+                , threadIdLimit
+                ]
 
         coefficientD <- holdDyn initialCoefficient coefficientE
+
         limitD <- foldDyn updateLimits initialLimits limitE
 
-        let resultE = processNetwork calibrationModel rawE coefficientD limitD
-        performEvent_ $ liftIO . pushResult <$> resultE
+        performEvent_ $ liftIO . pushResult 
+            <$> processNetwork calibrationModel rawE coefficientD limitD
 
-        let threadIds = [ threadIdKill
-                        , threadIdRaw
-                        , threadIdCoefficient
-                        , threadIdLimit
-                        ]
-        performEvent_ $ liftIO (mapM_ killThread threadIds) <$ killE
+        performEvent_ $ liftIO killThreads <$ killE
 
         pure killE
 

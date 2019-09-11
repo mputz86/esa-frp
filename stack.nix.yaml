@@ -48,6 +48,10 @@ extra-deps:
 - monoidal-containers-0.6@sha256:73067b83e50be95bedb79ab78f5d90c8530aaea7473d8b19f58aeba3ca4393cc,2566
 - ref-tf-0.4.0.1@sha256:369e5c6237e4b6fe330fde021b94a9f98971690cbec5b910faa9af3cbcb15610,1133
 - witherable-0.3.1@sha256:ed3d5bc9eb1c08fa9704d9e143cdf622e1bd80b847cd5ede8c07da7bc7981ab9,1313
+- optics-0.1@sha256:f15690905f4500bd57ee8399fc36200e62360aeed974de9032a93841cc820b06,5851
+- optics-core-0.1@sha256:301a7ec522495868a8969a6ad74913c569a1492ba455e5f3c6fcc65f16f500ca,4402
+- optics-extra-0.1@sha256:87c94fa6c2265c26b55c20654dcb6917f7aac04b1d7df473997eb221c8bcc80e,3265
+- optics-th-0.1@sha256:c9d47fdf384a2c515ad6faeea9d5da99ac4a3d351ccec3a28f100e040d65bcd4,1913
 
   # Override default flag values for local packages and extra-deps
 # flags: {}
