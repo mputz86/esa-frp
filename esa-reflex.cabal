@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a0354159adc6479ad81e88e8b93c06762f6f614ec9699f37f344dae916cc7912
+-- hash: 9c9978f85e77af4db00212eacb331382bf5d5fe04792f0fdeedfed32f35daa6f
 
 name:           esa-reflex
 version:        0.1.0.0
@@ -39,6 +39,7 @@ library
     , base >=4.7 && <5
     , containers
     , mtl
+    , optics
     , protolude
     , random
     , reflex
@@ -61,6 +62,7 @@ executable esa-frp
     , containers
     , esa-reflex
     , mtl
+    , optics
     , protolude
     , random
     , reflex
