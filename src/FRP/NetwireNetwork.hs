@@ -43,9 +43,9 @@ calibrationCoefficientWire
 calibrationCoefficientWire ccc = run
   where
     rW = readValuesFromChan ccc
-    rB d = mkGenN $ \case
-            Just x -> pure (Right x, rB x)
-            Nothing -> pure (Right d, rB d)
+    rB d = mkPureN $ \case
+            Just x -> (Right x, rB x)
+            Nothing -> (Right d, rB d)
     run xc = (Just <$> rW <|> pure Nothing) >>> rB xc
 
 limitWire :: (Show (InputLimit r)) => TChan (InputLimit r) -> Wire s () IO a (InputLimit r)
@@ -56,9 +56,9 @@ actualLimitWire :: (Show (Bounds r), Show (InputLimit r)) => TChan (InputLimit r
 actualLimitWire lc al = run al
   where
     rW = flip updateLimits al <$> limitWire lc
-    rB d = mkGenN $ \case
-            Just x -> pure (Right x, rB x)
-            Nothing -> pure (Right d, rB d)
+    rB d = mkPureN $ \case
+            Just x -> (Right x, rB x)
+            Nothing -> (Right d, rB d)
     run xc = (Just <$> rW <|> pure Nothing) >>> rB xc
 
 pushValues :: (ProcessingOutput r -> IO ()) -> Wire s () IO (ProcessingOutput r) ()
@@ -70,9 +70,9 @@ processRawInput
        )
     => CalibrationModel r
     -> Wire s () IO (CalibrationCoefficient r, ActualLimits r, Maybe r) (ProcessingOutput r)
-processRawInput m = mkGen_ $ \(c, al, r) -> case r of
-    Just r -> pure $  Right $ process m c al r
-    Nothing -> pure $ Left ()
+processRawInput m = mkPure_ $ \(c, al, r) -> case r of
+    Just r -> Right $ process m c al r
+    Nothing -> Left ()
 
 processRaw
     :: (Ord (Calibrated r))
