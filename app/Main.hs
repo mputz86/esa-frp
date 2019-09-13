@@ -1,4 +1,3 @@
-
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -16,6 +15,7 @@ import qualified Data.Text                     as T
 import           Data.Time
 
 import           FRP.Model
+import qualified FRP.NetwireNetwork            as N
 import qualified FRP.Reflex                    as R
 import qualified FRP.Streamly                  as S
 
@@ -76,9 +76,11 @@ main = do
     -- Runs pretty well for both.
     let c = RunConfig 1 100 100000 500000 10000000 True 100000
 
-    -- Run with Reflex.
-    run c S.runNetwork
     -- Run with Streamly.
+    run c S.runNetwork
+    -- Run with Netwire.
+    run c N.runNetwork
+    -- Run with Reflex.
     run c R.runNetwork
 
 valueSource :: NFData a

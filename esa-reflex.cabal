@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9c9978f85e77af4db00212eacb331382bf5d5fe04792f0fdeedfed32f35daa6f
+-- hash: 8ee60c35c818e8ef8b91f94e5e28cd67b3af5ff691655c2991981c4963fc9cab
 
 name:           esa-reflex
 version:        0.1.0.0
@@ -27,6 +27,7 @@ source-repository head
 library
   exposed-modules:
       FRP.Model
+      FRP.NetwireNetwork
       FRP.Reflex
       FRP.Streamly
   other-modules:
@@ -39,6 +40,7 @@ library
     , base >=4.7 && <5
     , containers
     , mtl
+    , netwire
     , optics
     , protolude
     , random
@@ -62,6 +64,7 @@ executable esa-frp
     , containers
     , esa-reflex
     , mtl
+    , netwire
     , optics
     , protolude
     , random
