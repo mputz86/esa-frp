@@ -77,11 +77,11 @@ main = do
     let c = RunConfig 1 100 100000 500000 10000000 True 100000
 
     -- Run with Streamly.
-    run c S.runNetwork
+    -- run c S.runNetwork
     -- Run with Netwire.
     run c N.runNetwork
     -- Run with Reflex.
-    run c R.runNetwork
+    -- run c R.runNetwork
 
 valueSource :: NFData a
             => Int  -- ^ delay

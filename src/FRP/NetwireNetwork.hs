@@ -15,6 +15,7 @@ import           Control.Concurrent.STM
 import           Control.Concurrent.STM.TBChan
 import           Control.Monad.Fix
 import           Control.Wire.Core
+import           Control.Wire.Unsafe.Event
 import           Data.IORef
 import           FRP.Netwire
 import           FRP.Model
@@ -28,38 +29,28 @@ import           FRP.Model
 -- a - input value
 -- b - output value
 
-readValuesFromChan :: (Show b) => TChan b -> Wire s () IO a b
-readValuesFromChan chan = mkGen_ $ const $ do
-    v <- atomically $ tryReadTChan chan
-    pure $ case v of
-      Just v' -> Right v'
-      Nothing -> Left ()
+pullTChan :: (Show b) => TChan b -> Wire s () IO a (Event b)
+pullTChan chan = mkGen_ g 
+    where
+    g _  = atomically $  Right . Event <$> readTChan chan <|>  pure (Left ())
 
 calibrationCoefficientWire
     :: (Show b)
     => TChan b
     -> b
     -> Wire s () IO a b
-calibrationCoefficientWire ccc = run
-  where
-    rW = readValuesFromChan ccc
-    rB d = mkPureN $ \case
-            Just x -> (Right x, rB x)
-            Nothing -> (Right d, rB d)
-    run xc = (Just <$> rW <|> pure Nothing) >>> rB xc
+calibrationCoefficientWire ch v = (pullTChan ch >>> hold) <|> pure v
 
-limitWire :: (Show (InputLimit r)) => TChan (InputLimit r) -> Wire s () IO a (InputLimit r)
-limitWire = readValuesFromChan
+limitWire :: (Show (InputLimit r)) => TChan (InputLimit r) -> Wire s () IO a (Event (InputLimit r))
+limitWire = pullTChan
 
 -- FIXME: Similar to calibrationCoefficientWire, abstract here?
-actualLimitWire :: (Show (Bounds r), Show (InputLimit r)) => TChan (InputLimit r) -> ActualLimits r -> Wire s () IO a (ActualLimits r)
-actualLimitWire lc al = run al
-  where
-    rW = flip updateLimits al <$> limitWire lc
-    rB d = mkPureN $ \case
-            Just x -> (Right x, rB x)
-            Nothing -> (Right d, rB d)
-    run xc = (Just <$> rW <|> pure Nothing) >>> rB xc
+actualLimitWire 
+    :: (Show (Bounds r), Show (InputLimit r)) 
+    => TChan (InputLimit r) 
+    -> ActualLimits r 
+    -> Wire s () IO a (ActualLimits r)
+actualLimitWire ch al = (pullTChan ch >>> accumE (flip updateLimits)  al >>> hold) <|> pure al
 
 pushValues :: (ProcessingOutput r -> IO ()) -> Wire s () IO (ProcessingOutput r) ()
 pushValues push = mkGen_ $ fmap Right . push
@@ -69,18 +60,11 @@ processRawInput
        , Show (CalibrationCoefficient r)
        )
     => CalibrationModel r
-    -> Wire s () IO (CalibrationCoefficient r, ActualLimits r, Maybe r) (ProcessingOutput r)
-processRawInput m = mkPure_ $ \(c, al, r) -> case r of
-    Just r -> Right $ process m c al r
-    Nothing -> Left ()
+    -> Wire s () IO (CalibrationCoefficient r, ActualLimits r, r) (ProcessingOutput r)
+processRawInput m = mkPure_ $ \(c, al, r) -> Right $ process m c al r
 
-processRaw
-    :: (Ord (Calibrated r))
-    => CalibrationModel r
-    -> CalibrationCoefficient r
-    -> ActualLimits r
-    -> Wire s () IO r (ProcessingOutput r)
-processRaw cm cc al = mkPure_ $ \r -> Right $ process cm cc al r
+printStream :: Show a => Wire s e IO a ()
+printStream = mkGen_ $ fmap Right . print
 
 setupNetwork
     :: ( HasTime t s
@@ -103,7 +87,7 @@ setupNetwork cm (ProcessingInitial icc ial) rpc ccc lc pr =
           -- FIXME: Fires very often, can this be reduced?
           cc <- calibrationCoefficientWire ccc icc -< ()
           nal <- actualLimitWire lc ial -< ()
-          rp <- (Just <$> readValuesFromChan rpc) <|> pure Nothing -< ()
+          rp <- pullTChan rpc >>> hold -< ()
           r <- pushValues pr <<< processRawInput cm -< (cc, nal, rp)
        returnA -< ()
 
