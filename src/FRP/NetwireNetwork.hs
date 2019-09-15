@@ -5,7 +5,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, TypeFamilies, TypeApplications #-}
 
 module FRP.NetwireNetwork where
 
@@ -31,87 +31,61 @@ import           FRP.Model
 -- b - output value
 
 -- | Inhibits: never
-pullTChan :: (Show b) => TChan b -> Wire s () IO a (Maybe b)
-pullTChan chan = mkGen_ g 
-    where
-    g _ = atomically $ Right <$> tryReadTChan chan
 
-calibrationCoefficientWire
-    :: (Show b)
-    => TChan b
-    -> b
-    -> Wire s () IO a b
-calibrationCoefficientWire ch v = pure v >--
-    (became isJust . pullTChan ch >>> accumE fromMaybe v >>> hold)
+type WireE s e m a b = Wire s e m a (Event b) 
 
-limitWire :: (Show (InputLimit r)) => TChan (InputLimit r) -> Wire s () IO a (Maybe (InputLimit r))
-limitWire = pullTChan
 
--- FIXME: Similar to calibrationCoefficientWire, abstract here?
-actualLimitWire 
-    :: (Show (Bounds r), Show (InputLimit r)) 
-    => TChan (InputLimit r) 
-    -> ActualLimits r 
-    -> Wire s () IO a (ActualLimits r)
-actualLimitWire ch ial = pure ial >--
-    (became isJust . pullTChan ch >>> accumE (\al -> flip updateLimits al . unsafeFromJust) ial >>> hold)
 
-rawInputWire
-    :: (Show b)
-    => TChan b
-    -> Wire s () IO a (Event b)
-rawInputWire ch = (unsafeFromJust <$>) <$> became isJust . pullTChan ch
+calibrationCoefficientWire :: Monoid e =>  WireE s e IO () b  -> b -> Wire s e IO () b
+calibrationCoefficientWire coeffE v = pure v >-- (coeffE >>> hold)
 
-pushValues :: (ProcessingOutput r -> IO ()) -> Wire s () IO (ProcessingOutput r) ()
+
+actualLimitWire ::Monoid e =>  WireE s e IO () (InputLimit r) -> ActualLimits r -> Wire s e IO () (ActualLimits r)
+actualLimitWire inputLimitE ial = inputLimitE >>> accumE (flip updateLimits) ial >>> hold
+
+
+pushValues :: (ProcessingOutput r -> IO ()) -> Wire s e IO (ProcessingOutput r) ()
 pushValues push = mkGen_ $ fmap Right . push
 
 processRawInput
-    :: ( Ord (Calibrated r)
-       , Show (CalibrationCoefficient r)
-       )
+    :: (Ord (Calibrated r)) 
     => CalibrationModel r
-    -> Wire s () IO (CalibrationCoefficient r, ActualLimits r, Event r) (ProcessingOutput r)
-processRawInput m = mkPure_ $ \(c, al, r) -> case r of
-    -- FIXME: Potentially wrong and reason for bad performance. How to do better?
-    -- FIXME: Maybe with switch - Event must be given in separate input, not in tuple with configuration.
-    Event r -> Right $ process m c al r
-    _ -> Left ()
+    -> Wire s e IO (CalibrationCoefficient r, ActualLimits r, r) (ProcessingOutput r)
+processRawInput m = mkPure_ $ \(c, al, r) -> Right $ process m c al r
 
-printStream :: Show a => Wire s e IO a ()
-printStream = mkGen_ $ fmap Right . print
 
 setupNetwork
-    :: ( HasTime t s
-       , Ord (Calibrated r)
-       , Show (Bounds r)
-       , Show (CalibrationCoefficient r)
-       , Show (InputLimit r)
-       , Show r
-       )
+    :: forall e r s. ( Monoid e,   Ord (Calibrated r))
     => CalibrationModel r
     -> ProcessingInitial r
-    -> TChan r
-    -> TChan (CalibrationCoefficient r)
-    -> TChan (InputLimit r)
+    -> WireE s e IO () r
+    -> WireE s e IO () (CalibrationCoefficient r)
+    -> WireE s e IO () (InputLimit r)
     -> (ProcessingOutput r -> IO ())
-    -> Wire s () IO () ()
+    -> Wire s e IO () ()
 setupNetwork cm (ProcessingInitial icc ial) rpc ccc lc pr =
     proc _ -> do
-       rec
-          cc <- calibrationCoefficientWire ccc icc -< ()
-          nal <- actualLimitWire lc ial -< ()
-          rp <- rawInputWire rpc -< ()
-          r <- pushValues pr <<< processRawInput cm -< (cc, nal, rp)
-       returnA -< ()
+        cc <- calibrationCoefficientWire ccc icc -<()
+        nal <- actualLimitWire lc ial -< ()
+        rp <- rpc >>> hold -< ()
+        pushValues pr <<< processRawInput cm -< (cc, nal, rp)
+        
+runNetwireNetwork ::  IORef Bool -> Session IO s -> Wire s e IO () () -> IO ()
+runNetwireNetwork closedRef = go 
+    where 
+    go session wire = do
+        closed <- readIORef closedRef
+        Protolude.unless closed $ do
+            (st , session') <- stepSession session
+            (_, wire' ) <- stepWire wire st $ Right ()
+            go session' wire'
 
-runNetwireNetwork :: (HasTime t s) => IORef Bool -> Session IO s -> Wire s e IO a () -> IO ()
-runNetwireNetwork closedRef session wire = do
-  closed <- readIORef closedRef
-  Protolude.unless closed $ do
-    (st , session') <- stepSession session
-    -- FIXME: Remove undefined??
-    (wt', wire'   ) <- stepWire wire st $ Right undefined
-    runNetwireNetwork closedRef session' wire'
+pullIO ::  IO b -> IO (WireE s e IO () b, ThreadId)
+pullIO pull = do
+    chan <- newTChanIO
+    let wire = mkGen_ $ const $ atomically $ Right <$> (Event <$> readTChan chan <|> pure NoEvent)
+    tid <- forkIO $ forever $  pull >>=  atomically . writeTChan chan 
+    pure (wire,tid)
 
 runNetwork
     :: ( Ord (Calibrated r)
@@ -128,22 +102,19 @@ runNetwork c@ProcessingConfig{..} i = do
     print "Run with Netwire"
 
     -- FIXME: Values are taken in Main from TBChan and here they are written into TChan again. Optimize.
-    rawParameterChan <- newTChanIO
-    rawParameterThreadId <- forkIO $ forever $ do
-        p <- pullRawParameter 
-        atomically . writeTChan rawParameterChan $ p
+    (rawParameterChan, rawParameterThreadId) <- pullIO pullRawParameter 
 
-    calibrationCoefficientChan <- newTChanIO
-    calibrationCoefficientThreadId <- forkIO $ forever $ pullCalibrationCoefficient >>= (atomically . writeTChan calibrationCoefficientChan)
+    (calibrationCoefficientChan, calibrationCoefficientThreadId) <- pullIO pullCalibrationCoefficient 
 
-    limitChan <- newTChanIO
-    limitThreadId <- forkIO $ forever $ pullLimit >>= (atomically . writeTChan limitChan)
+    (limitChan, limitThreadId) <- pullIO pullLimit 
 
     killed <- newIORef False
     killThreadId <- forkIO $ killProcess >> writeIORef killed True
 
-    runNetwireNetwork killed clockSession_
-        (setupNetwork calibrationModel i rawParameterChan calibrationCoefficientChan limitChan pushResult)
+    runNetwireNetwork 
+        killed 
+        (countSession_ ())
+        $ setupNetwork @ () calibrationModel i rawParameterChan calibrationCoefficientChan limitChan pushResult
 
     killThread killThreadId
     killThread limitThreadId
