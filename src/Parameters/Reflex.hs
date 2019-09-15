@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module FRP.Reflex where
+module Parameters.Reflex where
 
 import           Control.Concurrent
 import           Control.Concurrent.STM
@@ -18,7 +18,7 @@ import qualified Data.Set               as S
 import qualified Data.Text              as T
 import           Data.Time
 
-import           FRP.Model
+import           Parameters.Model
 
 import qualified Prelude                (Show, show)
 

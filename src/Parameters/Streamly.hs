@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeSynonymInstances, TemplateHaskell #-}
 
-module FRP.Streamly where
+module Parameters.Streamly where
 
 import           Control.Concurrent
 import           Control.Concurrent.STM
@@ -16,7 +16,7 @@ import qualified Data.Map               as M
 import qualified Data.Text              as T
 import           Data.Time
 
-import           FRP.Model
+import           Parameters.Model
 
 import qualified Prelude                (Show, show)
 

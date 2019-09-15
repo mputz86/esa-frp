@@ -1,5 +1,5 @@
 -- |
--- Module      :  FRP.Model
+-- Module      :  Parameters.Model
 -- Copyright   :  Paolo Veronelli, Matthias Putz, 2019
 -- License     :  BSD3
 --
@@ -18,7 +18,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module FRP.Model where
+module Parameters.Model where
 
 import           Control.Concurrent
 import           Control.Concurrent.STM

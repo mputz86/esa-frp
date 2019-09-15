@@ -5,9 +5,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables, TypeFamilies, TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables, TypeFamilies, TypeApplications, PackageImports, ConstraintKinds #-}
 
-module FRP.NetwireNetwork where
+module Parameters.Netwire where
 
 import           Protolude hiding ((.))
 import           Unsafe (unsafeFromJust)
@@ -18,8 +18,8 @@ import           Control.Monad.Fix
 import           Control.Wire.Core
 import           Control.Wire.Unsafe.Event
 import           Data.IORef
-import           FRP.Netwire
-import           FRP.Model
+import   "netwire"        FRP.Netwire
+import           Parameters.Model
 
 
 --
@@ -34,18 +34,22 @@ import           FRP.Model
 
 type WireE s e m a b = Wire s e m a (Event b) 
 
+logE ::  Show b => Wire s e IO b b
+logE = proc x -> do
+    mkGen_ (\x -> fmap Right $ print x) -< x
+    id -< x
 
-
-calibrationCoefficientWire :: Monoid e =>  WireE s e IO () b  -> b -> Wire s e IO () b
-calibrationCoefficientWire coeffE v = pure v >-- (coeffE >>> hold)
+calibrationCoefficientWire :: (Show b, Monoid e) =>  WireE s e IO () b  -> b -> Wire s e IO () b
+calibrationCoefficientWire coeffE v = pure v >-- (coeffE >>> hold ) 
 
 
 actualLimitWire ::Monoid e =>  WireE s e IO () (InputLimit r) -> ActualLimits r -> Wire s e IO () (ActualLimits r)
 actualLimitWire inputLimitE ial = inputLimitE >>> accumE (flip updateLimits) ial >>> hold
 
+type ShowAll r = (Show r, Show (Calibrated r), Show (CalibrationCoefficient r))
+pushValues :: ShowAll r => (ProcessingOutput r -> IO ()) -> Wire s e IO (ProcessingOutput r) ()
 
-pushValues :: (ProcessingOutput r -> IO ()) -> Wire s e IO (ProcessingOutput r) ()
-pushValues push = mkGen_ $ fmap Right . push
+pushValues push = mkGen_ $ \x -> fmap Right $ push x 
 
 processRawInput
     :: (Ord (Calibrated r)) 
@@ -55,10 +59,10 @@ processRawInput m = mkPure_ $ \(c, al, r) -> Right $ process m c al r
 
 
 setupNetwork
-    :: forall e r s. ( Monoid e,   Ord (Calibrated r))
+    :: forall e r s. ( Monoid e,   Ord (Calibrated r), ShowAll r)
     => CalibrationModel r
     -> ProcessingInitial r
-    -> WireE s e IO () r
+    -> Wire s e IO () r
     -> WireE s e IO () (CalibrationCoefficient r)
     -> WireE s e IO () (InputLimit r)
     -> (ProcessingOutput r -> IO ())
@@ -67,7 +71,7 @@ setupNetwork cm (ProcessingInitial icc ial) rpc ccc lc pr =
     proc _ -> do
         cc <- calibrationCoefficientWire ccc icc -<()
         nal <- actualLimitWire lc ial -< ()
-        rp <- rpc >>> hold -< ()
+        rp <- rpc  -< ()
         pushValues pr <<< processRawInput cm -< (cc, nal, rp)
         
 runNetwireNetwork ::  IORef Bool -> Session IO s -> Wire s e IO () () -> IO ()
@@ -87,6 +91,13 @@ pullIO pull = do
     tid <- forkIO $ forever $  pull >>=  atomically . writeTChan chan 
     pure (wire,tid)
 
+pullIOT ::  Monoid e => IO b -> IO (Wire s e IO () b, ThreadId)
+pullIOT pull = do
+    chan <- newTChanIO
+    let wire = mkGen_ $ const $ atomically $ (Right <$> readTChan chan <|> pure (Left mempty))
+    tid <- forkIO $ forever $  pull >>=  atomically . writeTChan chan 
+    pure (wire,tid)
+
 runNetwork
     :: ( Ord (Calibrated r)
        , Show r
@@ -102,7 +113,7 @@ runNetwork c@ProcessingConfig{..} i = do
     print "Run with Netwire"
 
     -- FIXME: Values are taken in Main from TBChan and here they are written into TChan again. Optimize.
-    (rawParameterChan, rawParameterThreadId) <- pullIO pullRawParameter 
+    (rawParameterChan, rawParameterThreadId) <- pullIOT pullRawParameter 
 
     (calibrationCoefficientChan, calibrationCoefficientThreadId) <- pullIO pullCalibrationCoefficient 
 

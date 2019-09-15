@@ -3,7 +3,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, PackageImports #-}
 
 module Main where
 
@@ -14,10 +14,10 @@ import qualified Data.Char                     as C
 import qualified Data.Text                     as T
 import           Data.Time
 
-import           FRP.Model
-import qualified FRP.NetwireNetwork            as N
-import qualified FRP.Reflex                    as R
-import qualified FRP.Streamly                  as S
+import           Parameters.Model
+import qualified Parameters.Netwire as   N
+import qualified Parameters.Reflex                    as R
+import qualified Parameters.Streamly                  as S
 
 import qualified Prelude
 
