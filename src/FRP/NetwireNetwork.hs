@@ -10,6 +10,7 @@
 module FRP.NetwireNetwork where
 
 import           Protolude hiding ((.))
+import           Unsafe (unsafeFromJust)
 
 import           Control.Concurrent.STM
 import           Control.Concurrent.STM.TBChan
@@ -29,19 +30,21 @@ import           FRP.Model
 -- a - input value
 -- b - output value
 
-pullTChan :: (Show b) => TChan b -> Wire s () IO a (Event b)
+-- | Inhibits: never
+pullTChan :: (Show b) => TChan b -> Wire s () IO a (Maybe b)
 pullTChan chan = mkGen_ g 
     where
-    g _  = atomically $  Right . Event <$> readTChan chan <|>  pure (Left ())
+    g _ = atomically $ Right <$> tryReadTChan chan
 
 calibrationCoefficientWire
     :: (Show b)
     => TChan b
     -> b
     -> Wire s () IO a b
-calibrationCoefficientWire ch v = (pullTChan ch >>> hold) <|> pure v
+calibrationCoefficientWire ch v = pure v >--
+    (became isJust . pullTChan ch >>> accumE fromMaybe v >>> hold)
 
-limitWire :: (Show (InputLimit r)) => TChan (InputLimit r) -> Wire s () IO a (Event (InputLimit r))
+limitWire :: (Show (InputLimit r)) => TChan (InputLimit r) -> Wire s () IO a (Maybe (InputLimit r))
 limitWire = pullTChan
 
 -- FIXME: Similar to calibrationCoefficientWire, abstract here?
@@ -50,7 +53,14 @@ actualLimitWire
     => TChan (InputLimit r) 
     -> ActualLimits r 
     -> Wire s () IO a (ActualLimits r)
-actualLimitWire ch al = (pullTChan ch >>> accumE (flip updateLimits)  al >>> hold) <|> pure al
+actualLimitWire ch ial = pure ial >--
+    (became isJust . pullTChan ch >>> accumE (\al -> flip updateLimits al . unsafeFromJust) ial >>> hold)
+
+rawInputWire
+    :: (Show b)
+    => TChan b
+    -> Wire s () IO a (Event b)
+rawInputWire ch = (unsafeFromJust <$>) <$> became isJust . pullTChan ch
 
 pushValues :: (ProcessingOutput r -> IO ()) -> Wire s () IO (ProcessingOutput r) ()
 pushValues push = mkGen_ $ fmap Right . push
@@ -60,8 +70,12 @@ processRawInput
        , Show (CalibrationCoefficient r)
        )
     => CalibrationModel r
-    -> Wire s () IO (CalibrationCoefficient r, ActualLimits r, r) (ProcessingOutput r)
-processRawInput m = mkPure_ $ \(c, al, r) -> Right $ process m c al r
+    -> Wire s () IO (CalibrationCoefficient r, ActualLimits r, Event r) (ProcessingOutput r)
+processRawInput m = mkPure_ $ \(c, al, r) -> case r of
+    -- FIXME: Potentially wrong and reason for bad performance. How to do better?
+    -- FIXME: Maybe with switch - Event must be given in separate input, not in tuple with configuration.
+    Event r -> Right $ process m c al r
+    _ -> Left ()
 
 printStream :: Show a => Wire s e IO a ()
 printStream = mkGen_ $ fmap Right . print
@@ -84,10 +98,9 @@ setupNetwork
 setupNetwork cm (ProcessingInitial icc ial) rpc ccc lc pr =
     proc _ -> do
        rec
-          -- FIXME: Fires very often, can this be reduced?
           cc <- calibrationCoefficientWire ccc icc -< ()
           nal <- actualLimitWire lc ial -< ()
-          rp <- pullTChan rpc >>> hold -< ()
+          rp <- rawInputWire rpc -< ()
           r <- pushValues pr <<< processRawInput cm -< (cc, nal, rp)
        returnA -< ()
 

@@ -74,14 +74,25 @@ main = do
     -- Streamly can run this for max performance. Reflex hangs, since it catches up.
     -- let c = RunConfig 0 100000 500000 10000000 True 100000
     -- Runs pretty well for both.
-    let c = RunConfig 1 100 100000 500000 10000000 True 100000
+    -- let c = RunConfig 1 100 100000 500000 10000000 True 100000
+    let milli = 1000
+
+    -- Performance run.
+    let c = RunConfig 1 100 (100*milli) (500*milli) (10000*milli) True 100000
+
+    -- Run and check that initial values are used and output is produced on new raw value. So three values.
+    -- let c = RunConfig (3000*milli) 100 (20000*milli) (20000*milli) (10000*milli) True 1
+    -- Run and check that calibration coefficients are updated.
+    -- let c = RunConfig (2000*milli) 100 (20000*milli) (1000*milli) (10000*milli) True 1
+    -- Run and check that actual limits are updated.
+    -- let c = RunConfig (2000*milli) 100 (1000*milli) (20000*milli) (10000*milli) True 1
 
     -- Run with Streamly.
-    -- run c S.runNetwork
+    run c S.runNetwork
     -- Run with Netwire.
     run c N.runNetwork
     -- Run with Reflex.
-    -- run c R.runNetwork
+    run c R.runNetwork
 
 valueSource :: NFData a
             => Int  -- ^ delay
