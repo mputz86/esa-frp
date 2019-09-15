@@ -78,7 +78,7 @@ main = do
     let milli = 1000
 
     -- Performance run.
-    let c = RunConfig 1 100 (100*milli) (500*milli) (10000*milli) True 100000
+    let c = RunConfig 0 100 (100*milli) (500*milli) (10000*milli) True 100000
 
     -- Run and check that initial values are used and output is produced on new raw value. So three values.
     -- let c = RunConfig (3000*milli) 100 (20000*milli) (20000*milli) (10000*milli) True 1
@@ -88,9 +88,9 @@ main = do
     -- let c = RunConfig (2000*milli) 100 (1000*milli) (20000*milli) (10000*milli) True 1
 
     -- Run with Streamly.
-    run c S.runNetwork
+    -- run c S.runNetwork
     -- Run with Netwire.
-    run c N.runNetwork
+    -- run c N.runNetwork
     -- Run with Reflex.
     run c R.runNetwork
 

@@ -51,14 +51,16 @@ setupNetwork :: ( BasicGuestConstraints t m
 setupNetwork (ProcessingConfig killProcess calibrationModel getRawValue
               getCoefficient getLimit pushResult)
     (ProcessingInitial initialCoefficient initialLimits) = do
-        (rawE, sendRaw)                 <- newTriggerEvent
+        (rawE, sendRaw)                 <- newTriggerEventWithOnComplete
         (coefficientE, sendCoefficient) <- newTriggerEvent
         (limitE, sendLimit)             <- newTriggerEvent
         (killE, sendKill)               <- newTriggerEvent
 
         killThreads <- liftIO $  do
-            threadIdKill <- forkIO $ forever $ killProcess >>= sendKill
-            threadIdRaw  <- forkIO $ forever $ getRawValue >>= sendRaw
+            threadIdKill <- forkIO $ killProcess >>= sendKill
+            threadIdRaw  <- forkIO $ let 
+                f = getRawValue >>= flip sendRaw f
+                                         in f
             threadIdCoefficient <- forkIO $ forever $ getCoefficient >>= sendCoefficient
             threadIdLimit <- liftIO $ forkIO $ forever $ getLimit >>= sendLimit
             pure $ mapM_ killThread 
@@ -75,7 +77,7 @@ setupNetwork (ProcessingConfig killProcess calibrationModel getRawValue
         performEvent_ $ liftIO . pushResult 
             <$> processNetwork calibrationModel rawE coefficientD limitD
 
-        performEvent_ $ liftIO killThreads <$ killE
+        -- performEvent_ $ liftIO killThreads <$ killE
 
         pure killE
 
