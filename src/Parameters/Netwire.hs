@@ -18,7 +18,7 @@ import           Control.Monad.Fix
 import           Control.Wire.Core
 import           Control.Wire.Unsafe.Event
 import           Data.IORef
-import   "netwire"        FRP.Netwire
+import "netwire" FRP.Netwire
 import           Parameters.Model
 
 
@@ -40,15 +40,14 @@ logE = proc x -> do
     id -< x
 
 calibrationCoefficientWire :: (Show b, Monoid e) =>  WireE s e IO () b  -> b -> Wire s e IO () b
-calibrationCoefficientWire coeffE v = pure v >-- (coeffE >>> hold ) 
-
+calibrationCoefficientWire coeffE v = pure v >-- (coeffE >>> hold)
 
 actualLimitWire ::Monoid e =>  WireE s e IO () (InputLimit r) -> ActualLimits r -> Wire s e IO () (ActualLimits r)
-actualLimitWire inputLimitE ial = inputLimitE >>> accumE (flip updateLimits) ial >>> hold
+actualLimitWire inputLimitE ial = pure ial >-- (inputLimitE >>> accumE (flip updateLimits) ial >>> hold)
 
 type ShowAll r = (Show r, Show (Calibrated r), Show (CalibrationCoefficient r))
-pushValues :: ShowAll r => (ProcessingOutput r -> IO ()) -> Wire s e IO (ProcessingOutput r) ()
 
+pushValues :: ShowAll r => (ProcessingOutput r -> IO ()) -> Wire s e IO (ProcessingOutput r) ()
 pushValues push = mkGen_ $ \x -> fmap Right $ push x 
 
 processRawInput
@@ -56,7 +55,6 @@ processRawInput
     => CalibrationModel r
     -> Wire s e IO (CalibrationCoefficient r, ActualLimits r, r) (ProcessingOutput r)
 processRawInput m = mkPure_ $ \(c, al, r) -> Right $ process m c al r
-
 
 setupNetwork
     :: forall e r s. ( Monoid e,   Ord (Calibrated r), ShowAll r)
@@ -87,16 +85,22 @@ runNetwireNetwork closedRef = go
 pullIO ::  IO b -> IO (WireE s e IO () b, ThreadId)
 pullIO pull = do
     chan <- newTChanIO
-    let wire = mkGen_ $ const $ atomically $ Right <$> (Event <$> readTChan chan <|> pure NoEvent)
-    tid <- forkIO $ forever $  pull >>=  atomically . writeTChan chan 
+    let wire = mkGen_ $ const $ atomically $
+                    tryReadTChan chan >>= \case
+                        Just v' -> pure $ Right $ Event v'
+                        Nothing -> pure $ Right NoEvent
+    tid <- forkIO $ forever $ pull >>= atomically . writeTChan chan
     pure (wire,tid)
 
-pullIOT ::  Monoid e => IO b -> IO (Wire s e IO () b, ThreadId)
+pullIOT :: Monoid e => IO b -> IO (Wire s e IO () b, ThreadId)
 pullIOT pull = do
     chan <- newTChanIO
-    let wire = mkGen_ $ const $ atomically $ (Right <$> readTChan chan <|> pure (Left mempty))
-    tid <- forkIO $ forever $  pull >>=  atomically . writeTChan chan 
-    pure (wire,tid)
+    let wire = mkGen_ $ const $ atomically $
+                    tryReadTChan chan >>= \case
+                        Just v' -> pure $ Right v'
+                        Nothing -> pure $ Left mempty
+    tid <- forkIO $ forever $ pull >>= atomically . writeTChan chan
+    pure (wire, tid)
 
 runNetwork
     :: ( Ord (Calibrated r)
