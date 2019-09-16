@@ -27,12 +27,19 @@ import           Protolude
 import           Reflex
 import           Reflex.Host.Basic
 
+-- FIXME Missing syntethic parameters.
+
 data Acquisition = Sync | Async
 
-acquireIO :: (TriggerEvent t m, MonadIO m, PerformEvent t m, MonadIO (Performable m)) => Acquisition -> Event t () -> IO a -> m (Event t a)
-acquireIO ac kE pull = do 
-    (xE, loop) <-  case ac of
-        Sync -> do 
+acquireIO
+    :: (TriggerEvent t m, MonadIO m, PerformEvent t m, MonadIO (Performable m))
+    => Acquisition
+    -> Event t () -- ^ kill thread event
+    -> IO a -- ^ blocking data acquisition
+    -> m (Event t a) -- ^ event 
+acquireIO ac kE pull = do
+    (xE, loop) <- case ac of
+        Sync  -> do
             (xE, send) <- newTriggerEventWithOnComplete
             let loop = do
                     x <- pull
@@ -41,7 +48,7 @@ acquireIO ac kE pull = do
         Async -> do
             (xE, send) <- newTriggerEvent
             pure (xE, forever $ pull >>= send)
-    tid  <- liftIO $ forkIO loop
+    tid <- liftIO $ forkIO loop
     performEvent_ $ liftIO (killThread tid) <$ kE
     pure xE
 
@@ -52,10 +59,14 @@ processNetwork :: (Reflex t, Ord (Calibrated r))
                -> Dynamic t (ActualLimits r)
                -> Event t (ProcessingOutput r)
 processNetwork calibrationModel rawE coefficientD limitD =
-    -- FIXME Missing syntethic parameters.
     attachWith (uncurry $ process calibrationModel) (current $ (,) <$> coefficientD <*> limitD) rawE
 
-setupNetwork :: ( BasicGuestConstraints t m
+setupNetwork :: ( TriggerEvent t m
+                , MonadIO m
+                , PerformEvent t m
+                , MonadIO (Performable m)
+                , MonadHold t m
+                , MonadFix m
                 , Ord (Calibrated r)
                 , Show r
                 , Show (Bounds r)
@@ -64,23 +75,19 @@ setupNetwork :: ( BasicGuestConstraints t m
                 )
              => ProcessingConfig r
              -> ProcessingInitial r
-             -> BasicGuest t m (Event t ())
+             -> m (Event t ())
 setupNetwork (ProcessingConfig killProcess calibrationModel getRawValue
               getCoefficient getLimit pushResult)
     (ProcessingInitial initialCoefficient initialLimits) = do
         (kE, sendKill) <- newTriggerEvent
-        rawE           <- acquireIO Sync kE getRawValue
+        rawE           <- acquireIO Async kE getRawValue
         coefficientE   <- acquireIO Async kE getCoefficient
         limitE         <- acquireIO Async kE getLimit
-
-        void $ liftIO $ forkIO $ killProcess >>= sendKill
-
-        coefficientD <- holdDyn initialCoefficient coefficientE
-        limitD       <- foldDyn updateLimits initialLimits limitE
-
-        performEvent_ $ liftIO . pushResult 
+        _              <- liftIO $ forkIO $ killProcess >>= sendKill
+        coefficientD   <- holdDyn initialCoefficient coefficientE
+        limitD         <- foldDyn updateLimits initialLimits limitE
+        performEvent_ $ liftIO . pushResult
             <$> processNetwork calibrationModel rawE coefficientD limitD
-
         pure kE
 
 runNetwork :: ( Ord (Calibrated r)
@@ -94,5 +101,5 @@ runNetwork :: ( Ord (Calibrated r)
            -> IO ()
 runNetwork c i = do
     print "Run with Reflex"
-    basicHostWithQuit $ setupNetwork c i
+    basicHostWithQuit 100 $ setupNetwork c i
 

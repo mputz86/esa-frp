@@ -1,4 +1,4 @@
-name:                esa-reflex
+name:                esa-parameters
 version:             0.1.0.0
 github:              "githubuser/esa-reflex"
 license:             BSD3
@@ -29,7 +29,7 @@ dependencies:
 - protolude
 - random
 - reflex
-- reflex-basic-host
+- reflex-host
 - stm
 - streamly
 - text
@@ -52,7 +52,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - esa-reflex
+    - esa-parameters
 
 
 

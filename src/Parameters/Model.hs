@@ -73,6 +73,29 @@ data ProcessingInitial r = ProcessingInitial
     -- ^ inital map of limits
     }
 
+-- | full configuration of the process
+data InputConfig r = InpèutConfig
+    { i_calibrationModel :: CalibrationModel r
+    -- ^ the chosen calibration model
+    , i_pullRawParameter :: IO r
+    -- ^ how to wait for a row parameter
+    , i_controls :: Controls r
+    }
+
+data  Controls r = Controls 
+    { c_pullCalibrationCoefficient :: (CalibrationCoefficient r, IO (CalibrationCoefficient r))
+    -- ^ how to wait for a calibration coefficient change
+    , c_pullLimit :: (ActualLimits r, IO (InputLimit r))
+    -- ^ how to wait for a single limit change
+    , c_logResult :: Maybe (ProcessingOutput r -> IO ())
+    -- ^ how to push results, dangerous if slower than pullRawParameter
+    }
+
+data SyntheticConfig a b r = SyntheticConfig
+    {   s_compose :: Calibrated a -> Calibrated b -> r
+    ,   s_controls :: Controls r
+    }
+
 data Bounds r
     = Bounds { boundsLow :: Calibrated r, boundsHigh :: Calibrated r }
   deriving Generic
