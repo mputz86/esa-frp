@@ -34,24 +34,22 @@ resolver: lts-14.4
 #  - wai
 packages:
 - .
-- reflex-basic-host
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
+- github: paolino/reflex-basic-host
+  commit:  936082d1f74d36d2b50ca6329acc8b4488bdfc07
+- optics-0.1@sha256:f15690905f4500bd57ee8399fc36200e62360aeed974de9032a93841cc820b06,5851
+- ref-tf-0.4.0.1@sha256:369e5c6237e4b6fe330fde021b94a9f98971690cbec5b910faa9af3cbcb15610,1133
 - reflex-0.6.2.4@sha256:ffafa543f5137a4f71a098c8ecec0dbb9b2ceaf83c1143039095ace4530d0879,9253
-- github: qfpl/reflex-basic-host
-  commit: f39732465082dbdfcff742f430e370ccbea80b02
-- bimap-0.3.3@sha256:232518c0410990665b9c8677eb9318ee355c001d58945ddcbedec3baa30b4160,1475
 - constraints-extras-0.3.0.1@sha256:22006ebf98c82b654a5ab688e6434347584ba5495978f65dafa2cf6b71c4afd0,1495
+- optics-core-0.1@sha256:301a7ec522495868a8969a6ad74913c569a1492ba455e5f3c6fcc65f16f500ca,4402
+- optics-extra-0.1@sha256:87c94fa6c2265c26b55c20654dcb6917f7aac04b1d7df473997eb221c8bcc80e,3265
+- optics-th-0.1@sha256:c9d47fdf384a2c515ad6faeea9d5da99ac4a3d351ccec3a28f100e040d65bcd4,1913
 - dependent-map-0.3@sha256:dc745864d5116bbd59ad29100faec74c79e681d35808547023619544c0e9f9b7,1574
 - dependent-sum-0.6.2.0@sha256:bff37c85b38e768b942f9d81c2465b63a96076f1ba006e35612aa357770807b6,1856
 - monoidal-containers-0.6@sha256:73067b83e50be95bedb79ab78f5d90c8530aaea7473d8b19f58aeba3ca4393cc,2566
-- optics-0.1@sha256:24db374984af1a6f0b4fb51479c40d76a84686d543d85de30535f7ba6c811ac5,5646
-- optics-core-0.1@sha256:301a7ec522495868a8969a6ad74913c569a1492ba455e5f3c6fcc65f16f500ca,4402
-- optics-extra-0.1@sha256:1ade88aef7931e547f4f0c22f1d92b552009f4389c2e43674c34e644e99af5c6,3162
-- optics-th-0.1@sha256:9b465554bdebad9715e35924a1439a3f2739c78bf84a0e3b9aace553eb30850c,1911
-- ref-tf-0.4.0.1@sha256:369e5c6237e4b6fe330fde021b94a9f98971690cbec5b910faa9af3cbcb15610,1133
 - witherable-0.3.1@sha256:ed3d5bc9eb1c08fa9704d9e143cdf622e1bd80b847cd5ede8c07da7bc7981ab9,1313
 
   # Override default flag values for local packages and extra-deps
