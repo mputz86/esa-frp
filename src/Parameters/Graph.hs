@@ -52,6 +52,11 @@ import           Reflex
 
 import qualified Test.QuickCheck.Gen           as Q
 
+--------------------------------------------------------------------------------
+-- reflex standard constraints
+--------------------------------------------------------------------------------
+
+
 
 type ReflexC t m = ( PerformEvent t m
               , MonadFix m
@@ -79,11 +84,12 @@ startControls :: forall t m r.
 startControls rD kE (Controls cm (c0, pullCC) (a0, pullL) mLogR) = do
     cD <- acquireIO kE pullCC >>=  holdDyn c0 
     aD <- acquireIO kE pullL >>= foldDyn updateLimits a0 
-    let oD = process cm <$> cD <*> aD <*> rD
+    let oFD = process cm <$> cD <*> aD
+        oE = attachWith ($) (current oFD) (updated rD)
     case mLogR of
-        Just logR -> performEvent_ $ (liftIO . logR) <$> updated oD
+        Just logR -> performEvent_ $ (liftIO . logR) <$> oE
         Nothing   -> pure ()
-    pure $ calibratedValue <$> oD
+    pure $ calibratedValue <$> (oFD <*> rD)
 
 --------------------------------------------------------------------------------
 -- free monad
