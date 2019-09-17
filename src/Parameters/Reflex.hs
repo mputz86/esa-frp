@@ -29,26 +29,15 @@ import           Reflex.Host.Basic
 
 -- FIXME Missing syntethic parameters.
 
-data Acquisition = Sync | Async
 
 acquireIO
     :: (TriggerEvent t m, MonadIO m, PerformEvent t m, MonadIO (Performable m))
-    => Acquisition
-    -> Event t () -- ^ kill thread event
+    => Event t () -- ^ kill thread event
     -> IO a -- ^ blocking data acquisition
     -> m (Event t a) -- ^ event 
-acquireIO ac kE pull = do
-    (xE, loop) <- case ac of
-        Sync  -> do
-            (xE, send) <- newTriggerEventWithOnComplete
-            let loop = do
-                    x <- pull
-                    send x loop
-            pure (xE, loop)
-        Async -> do
-            (xE, send) <- newTriggerEvent
-            pure (xE, forever $ pull >>= send)
-    tid <- liftIO $ forkIO loop
+acquireIO kE pull = do
+    (xE, send) <- newTriggerEvent
+    tid <- liftIO $ forkIO $ forever $ pull >>= send
     performEvent_ $ liftIO (killThread tid) <$ kE
     pure xE
 
@@ -80,9 +69,9 @@ setupNetwork (ProcessingConfig killProcess calibrationModel getRawValue
               getCoefficient getLimit pushResult)
     (ProcessingInitial initialCoefficient initialLimits) = do
         (kE, sendKill) <- newTriggerEvent
-        rawE           <- acquireIO Async kE getRawValue
-        coefficientE   <- acquireIO Async kE getCoefficient
-        limitE         <- acquireIO Async kE getLimit
+        rawE           <- acquireIO kE getRawValue
+        coefficientE   <- acquireIO kE getCoefficient
+        limitE         <- acquireIO kE getLimit
         _              <- liftIO $ forkIO $ killProcess >>= sendKill
         coefficientD   <- holdDyn initialCoefficient coefficientE
         limitD         <- foldDyn updateLimits initialLimits limitE
