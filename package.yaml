@@ -38,6 +38,7 @@ dependencies:
 - stm-chans
 - free
 - optics
+- pretty-simple
 
 library:
   source-dirs: src

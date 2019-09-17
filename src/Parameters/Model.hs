@@ -159,3 +159,19 @@ process :: (Ord (Calibrated r))
         -> r
         -> ProcessingOutput r
 process m c al r = let cr = m c r in ProcessingOutput r cr (checkLimits cr al)
+
+data Log = SyncLog Text Text | InputLog Text Text deriving (Read, Show)
+
+reversingBucket :: Chan Log -> IO (Chan [Log])
+reversingBucket ch = do
+    nch <- newChan
+    let go ls = do
+            x <- readChan ch
+            case x of
+                 InputLog k v -> do
+                     writeChan nch $ x:ls
+                     go []
+                 SyncLog k v -> go (x:ls)
+    forkIO $ go []
+    pure nch
+

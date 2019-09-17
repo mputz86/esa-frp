@@ -31,6 +31,7 @@ import           Reflex
 import           Reflex.Host.Basic
 import Parameters.Graph
 import Control.Monad.Free
+import Text.Pretty.Simple
 
 --------------------------------------------------------------------------------
 -- reflex standard constraints
@@ -108,7 +109,7 @@ buildGraph kE (Free y) = case y of
     Synth2 (SyntheticConfig comp cs) aD bD f -> do
         startControls (comp <$> aD <*> bD) kE cs >>= buildGraph kE . f 
 
-data G q =  G { unG :: forall t. Applicative (Dynamic t) => Free (Graph (Dynamic t)) q}
+data G q =  G { unG :: forall t. Applicative (Dynamic t) => Chan Log -> Free (Graph (Dynamic t)) q}
 
 
 runNetwork :: G () -- ^ a graph forall quantified on 't'
@@ -116,14 +117,17 @@ runNetwork :: G () -- ^ a graph forall quantified on 't'
            -> IO () 
 runNetwork (G g) k = do
     print "Run with Reflex"
+    ch <- newChan
+    nch <- reversingBucket ch 
+    forkIO $ forever $ readChan nch >>= pPrint
     basicHostWithQuit 100 $ do
             (kE , kIO) <- newTriggerEvent
             liftIO $ forkIO $ k >>= kIO
-            _ <- buildGraph kE g
+            _ <- buildGraph kE $ g ch
             pure kE 
 
 --------------------------------------------------------------------------------
 -- example
 --------------------------------------------------------------------------------
 
-test1 = runNetwork (G $ graphABC >> pure ()) (threadDelay $ 10 * 10 ^ 6)
+test1 = runNetwork (G $ \ch -> graphABC ch >> pure ()) (threadDelay $ 10 * 10 ^ 6)

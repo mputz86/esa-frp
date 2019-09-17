@@ -7,9 +7,12 @@
 -- Stability   :  experimental
 -- Portability :  unknown
 --
--- A netowrk of 2 sources and one synthtic param
+-- A language to encode a typed Graph with 2 types of polimorphic nodes
 --
+-- * Input nodes
+-- * Synthetic nodes depending on 2 other nodes
 --
+
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -23,7 +26,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies, ConstraintKinds #-}
+{-# LANGUAGE TypeFamilies, ConstraintKinds, OverloadedStrings #-}
 
 module Parameters.Graph where
 
@@ -71,10 +74,10 @@ deriving instance Functor (Graph d)
 -- Graph compositional verbs
 --------------------------------------------------------------------------------
 
-inputRaw :: Ord (Calibrated r)
+input :: Ord (Calibrated r)
          => InputConfig r -- ^ the input configuration
          -> Free (Graph d) (d (Calibrated r)) -- ^ output signal
-inputRaw c = liftF $ Input c identity
+input c = liftF $ Input c identity
 
 synth2 :: Ord (Calibrated r)
        => SyntheticConfig b c r -- ^ the synthetic configuration
@@ -108,7 +111,7 @@ unroll y = do
     forkIO $ go y
     pure $ atomically $ readTBChan ch
 
-noSig = unroll $ pure ()
+noSig x = Signal x $ unroll $ pure ()
 
 someInts :: Num a => IO (IO a)
 someInts = unroll $ do
@@ -142,30 +145,33 @@ calibrateB () (B x) = x
 calibrateC () (C x) = x
 calibrateD () (D x) = x
 
-iA :: InputConfig A 
-iA = InputConfig (Signal 0 someInts) (Controls calibrateA (Signal () noSig) (Signal mempty noSig) 
-        (Just $ \x -> print x >> print "---A---" ))
+iA :: Chan Log ->  InputConfig A 
+iA ch = InputConfig (Signal 0 someInts) (Controls calibrateA (noSig ()) (noSig mempty ) 
+        (Just $ writeChan ch . InputLog "A" . show))
 
-iB :: InputConfig B
-iB = InputConfig (Signal 0 someInts) (Controls calibrateB (Signal () noSig) (Signal mempty noSig) 
-        (Just $ \x -> print x >> print "---B--"))
+iB :: Chan Log -> InputConfig B
+iB ch = InputConfig (Signal 0 someInts) (Controls calibrateB (noSig () ) (noSig mempty ) 
+        (Just $ writeChan ch . InputLog "B" . show))
 
-sABC :: SyntheticConfig (Calibrated A) (Calibrated B) C
-sABC = SyntheticConfig (\x y -> C $ x + y) (Controls calibrateC (Signal () noSig) (Signal mempty noSig) (Just print))
+sABC :: Chan Log -> SyntheticConfig (Calibrated A) (Calibrated B) C
+sABC ch = SyntheticConfig (\x y -> C $ x + y) (Controls calibrateC (noSig () ) (noSig mempty ) 
+        (Just $ writeChan ch . SyncLog "C" . show))
 
-sACD :: SyntheticConfig (Calibrated A) (Calibrated C) D
-sACD = SyntheticConfig (\x y -> D $ x + y) (Controls calibrateD (Signal () noSig) (Signal mempty noSig) (Just print))
+sACD :: Chan Log -> SyntheticConfig (Calibrated A) (Calibrated C) D
+sACD ch = SyntheticConfig (\x y -> D $ x + y) (Controls calibrateD (noSig () ) (noSig mempty ) 
+        (Just $ writeChan ch . SyncLog "D" . show))
 
 type Ords = (Ord (Calibrated A), Ord (Calibrated B),Ord (Calibrated C), Ord (Calibrated D))
 
 graphABC 
     :: (Applicative d , Ords)
-    => Free (Graph d) (d (Calibrated A, Calibrated B, Calibrated C, Calibrated D))
-graphABC = do
-    a <- inputRaw iA
-    b <- inputRaw iB
-    c <- synth2 sABC a b 
-    d <- synth2 sACD a c 
+    => Chan Log
+    -> Free (Graph d) (d (Calibrated A, Calibrated B, Calibrated C, Calibrated D))
+graphABC ch = do
+    a <- input $ iA ch
+    b <- input $ iB ch
+    c <- synth2 (sABC ch) a b 
+    d <- synth2 (sACD ch) a c 
     pure $ (,,,) <$> a <*> b <*> c <*> d
 
 
