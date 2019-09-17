@@ -111,14 +111,19 @@ buildGraph kE (Free y) = case y of
 data G q =  G { unG :: forall t. Applicative (Dynamic t) => Free (Graph (Dynamic t)) q}
 
 
-runNetwork :: G ()
-           -> IO ()
-           -> IO ()
-runNetwork graph k = do
+runNetwork :: G () -- ^ a graph forall quantified on 't'
+           -> IO ()  -- ^ kill (blocking action)
+           -> IO () 
+runNetwork (G g) k = do
     print "Run with Reflex"
-    basicHostWithQuit 100 $ case graph of 
-        G g -> do
+    basicHostWithQuit 100 $ do
             (kE , kIO) <- newTriggerEvent
             liftIO $ forkIO $ k >>= kIO
             _ <- buildGraph kE g
             pure kE 
+
+--------------------------------------------------------------------------------
+-- example
+--------------------------------------------------------------------------------
+
+test1 = runNetwork (G $ graphABC >> pure ()) (threadDelay $ 10 * 10 ^ 6)
