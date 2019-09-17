@@ -36,6 +36,7 @@ dependencies:
 - time
 - QuickCheck
 - stm-chans
+- free
 - optics
 
 library:
@@ -45,7 +46,10 @@ library:
 
 executables:
   esa-frp:
-    main:                app/Main.hs
+    main:                Main.hs
+    source-dirs:    
+        - networks
+        - app
     ghc-options:
     - -O2
     - -threaded
