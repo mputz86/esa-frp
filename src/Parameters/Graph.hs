@@ -40,95 +40,35 @@ import qualified Data.Text                     as T
 import           Data.Time
 
 import           Parameters.Model
-import           Parameters.Model
-import qualified Parameters.Reflex             as R
-import           Parameters.Reflex
 
 import qualified Prelude
 
 import           Protolude
 
-import           Reflex
 
 import qualified Test.QuickCheck.Gen           as Q
-
---------------------------------------------------------------------------------
--- reflex standard constraints
---------------------------------------------------------------------------------
-
-
-
-type ReflexC t m = ( PerformEvent t m
-              , MonadFix m
-              , Reflex t
-              , MonadHold t m
-              , MonadIO m
-              , MonadIO (Performable m)
-              , TriggerEvent t m
-              )
-
---------------------------------------------------------------------------------
--- initiators
---------------------------------------------------------------------------------
-
--- | start control acquisitions threads, add output rendering, return calibrated
--- signal
-startControls :: forall t m r.
-              ( Ord (Calibrated r)
-              , ReflexC t m 
-              )
-              => Dynamic t r -- ^ input signal
-              -> Event t () -- ^  kill event
-              -> Controls r -- ^ 
-              -> m (Dynamic t (Calibrated r))
-startControls rD kE (Controls cm (c0, pullCC) (a0, pullL) mLogR) = do
-    cD <- acquireIO kE pullCC >>=  holdDyn c0 
-    aD <- acquireIO kE pullL >>= foldDyn updateLimits a0 
-    let oFD = process cm <$> cD <*> aD
-        oE = attachWith ($) (current oFD) (updated rD)
-    case mLogR of
-        Just logR -> performEvent_ $ (liftIO . logR) <$> oE
-        Nothing   -> pure ()
-    pure $ calibratedValue <$> (oFD <*> rD)
 
 --------------------------------------------------------------------------------
 -- free monad
 --------------------------------------------------------------------------------
 
 -- | a DSL to represent graph of synthetic parameters
-data Graph t a where
+data Graph d a where
     -- | intropduce an input
     Input   :: Ord (Calibrated r) 
             => InputConfig r 
-            -> (Dynamic t  (Calibrated r) -> a) 
-            -> Graph t a
+            -> (d  (Calibrated r) -> a) 
+            -> Graph d a
     -- | introduce a syntetic parameter depending on 2 others
     Synth2  :: Ord (Calibrated r) 
             => SyntheticConfig b c r 
-            -> Dynamic t b 
-            -> Dynamic t c 
-            -> (Dynamic t (Calibrated r) -> a) 
-            -> Graph t a
+            -> d b 
+            -> d c 
+            -> (d (Calibrated r) -> a) 
+            -> Graph d a
 
-deriving instance Functor (Graph t)
+deriving instance Functor (Graph d)
 
---------------------------------------------------------------------------------
--- interpreter, it run the initiators and render the graph in reflex language
---------------------------------------------------------------------------------
-
-
-buildGraph :: ReflexC t m
-           => Event t () -- ^ kill signal
-           -> Free (Graph t) a -- ^ the graph
-           -> m a -- ^ anything relevant out of the building (dynamics ?)
-buildGraph _ (Pure x) = pure x
-buildGraph kE (Free y) = case y of
-    Input (InputConfig (r0, pull) cs) f ->  do  
-        -- raw value acquisition
-        rD <- acquireIO kE pull >>=  holdDyn r0 
-        startControls rD kE cs >>= buildGraph kE . f
-    Synth2 (SyntheticConfig comp cs) aD bD f -> do
-        startControls (comp <$> aD <*> bD) kE cs >>= buildGraph kE . f 
 
 --------------------------------------------------------------------------------
 -- Graph compositional verbs
@@ -136,14 +76,14 @@ buildGraph kE (Free y) = case y of
 
 inputRaw :: Ord (Calibrated r)
          => InputConfig r -- ^ the input configuration
-         -> Free (Graph t) (Dynamic t (Calibrated r)) -- ^ output signal
+         -> Free (Graph d) (d (Calibrated r)) -- ^ output signal
 inputRaw c = liftF $ Input c identity
 
 synth2 :: Ord (Calibrated r)
        => SyntheticConfig b c r -- ^ the synthetic configuration
-       -> Dynamic t b -- ^ first input signal
-       -> Dynamic t c -- ^ second input signal
-       -> Free (Graph t) (Dynamic t (Calibrated r)) -- ^ output signal
+       -> d b -- ^ first input signal
+       -> d c -- ^ second input signal
+       -> Free (Graph d) (d (Calibrated r)) -- ^ output signal
 synth2 c a b = liftF $ Synth2 c a b identity
 
 --------------------------------------------------------------------------------
@@ -171,8 +111,8 @@ sACD = notImplemented
 type Ords = (Ord (Calibrated A), Ord (Calibrated B),Ord (Calibrated C), Ord (Calibrated D))
 
 graphABC 
-    :: ( Reflex t , Ords)
-    => Free (Graph t) (Dynamic t (Calibrated A, Calibrated B, Calibrated C, Calibrated D))
+    :: (Applicative d , Ords)
+    => Free (Graph d) (d (Calibrated A, Calibrated B, Calibrated C, Calibrated D))
 graphABC = do
     a <- inputRaw iA
     b <- inputRaw iB
