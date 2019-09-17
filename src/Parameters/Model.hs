@@ -34,8 +34,6 @@ import qualified Prelude                (Show, show)
 
 import           Protolude
 
-import           Reflex
-import           Reflex.Host.Basic
 
 import qualified Test.QuickCheck.Gen    as Q
 
@@ -73,9 +71,12 @@ data ProcessingInitial r = ProcessingInitial
     -- ^ inital map of limits
     }
 
+
+data Signal a x = Signal a (IO (IO x))
+
 -- | full configuration of the process
 data InputConfig r = InputConfig
-    { i_pullRawParameter :: (r, IO r)
+    { i_pullRawParameter :: Signal r r
     -- ^ how to wait for a row parameter
     , i_controls :: Controls r
     }
@@ -83,9 +84,9 @@ data InputConfig r = InputConfig
 data  Controls r = Controls 
     { c_calibrationModel :: CalibrationModel r
     -- ^ the chosen calibration model
-    , c_pullCalibrationCoefficient :: (CalibrationCoefficient r, IO (CalibrationCoefficient r))
+    , c_pullCalibrationCoefficient :: Signal (CalibrationCoefficient r) (CalibrationCoefficient r)
     -- ^ how to wait for a calibration coefficient change
-    , c_pullLimit :: (ActualLimits r, IO (InputLimit r))
+    , c_pullLimit :: Signal (ActualLimits r) (InputLimit r)
     -- ^ how to wait for a single limit change
     , c_logResult :: Maybe (ProcessingOutput r -> IO ())
     -- ^ how to push results, dangerous if slower than pullRawParameter

@@ -10,8 +10,6 @@
 -- A netowrk of 2 sources and one synthtic param
 --
 --
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -46,7 +44,6 @@ import qualified Prelude
 import           Protolude
 
 
-import qualified Test.QuickCheck.Gen           as Q
 
 --------------------------------------------------------------------------------
 -- free monad
@@ -86,27 +83,78 @@ synth2 :: Ord (Calibrated r)
        -> Free (Graph d) (d (Calibrated r)) -- ^ output signal
 synth2 c a b = liftF $ Synth2 c a b identity
 
+
+
+--------------------------------------------------------------------------------
+-- event DSL, for testing
+--------------------------------------------------------------------------------
+
+data List x a where
+    Element :: Int -> x -> a -> List x a
+    deriving Functor
+
+event :: Int -> x -> Free (List x) ()
+event t x = liftF $ Element t x ()
+
+unroll :: Free (List x) a -> IO (IO x)
+unroll y = do
+    ch <- newTBChanIO 100
+    let
+        go (Pure _) = pure ()
+        go (Free (Element t x f)) = do
+            threadDelay (t * 1000) 
+            atomically (writeTBChan ch x) 
+            go f
+    forkIO $ go y
+    pure $ atomically $ readTBChan ch
+
+noSig = unroll $ pure ()
+
+someInts :: Num a => IO (IO a)
+someInts = unroll $ do
+    event 0 1
+    event 1000 2
+    event 1000 3
+    event 1000 4
+    event 1000 5
 --------------------------------------------------------------------------------
 -- example
 --------------------------------------------------------------------------------
 
 
-data A 
-data B 
-data C
-data D
+newtype A = A Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+newtype B = B Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+newtype C = C Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+newtype D = D Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+
+type instance Calibrated A = Int
+type instance Calibrated B = Int
+type instance Calibrated C = Int
+type instance Calibrated D = Int
+
+type instance CalibrationCoefficient A = ()
+type instance CalibrationCoefficient B = ()
+type instance CalibrationCoefficient C = ()
+type instance CalibrationCoefficient D = ()
+
+calibrateA () (A x) = x
+calibrateB () (B x) = x
+calibrateC () (C x) = x
+calibrateD () (D x) = x
 
 iA :: InputConfig A 
-iA = notImplemented
+iA = InputConfig (Signal 0 someInts) (Controls calibrateA (Signal () noSig) (Signal mempty noSig) 
+        (Just $ \x -> print x >> print "---A---" ))
 
 iB :: InputConfig B
-iB = notImplemented
+iB = InputConfig (Signal 0 someInts) (Controls calibrateB (Signal () noSig) (Signal mempty noSig) 
+        (Just $ \x -> print x >> print "---B--"))
 
 sABC :: SyntheticConfig (Calibrated A) (Calibrated B) C
-sABC = notImplemented
+sABC = SyntheticConfig (\x y -> C $ x + y) (Controls calibrateC (Signal () noSig) (Signal mempty noSig) (Just print))
 
 sACD :: SyntheticConfig (Calibrated A) (Calibrated C) D
-sACD = notImplemented
+sACD = SyntheticConfig (\x y -> D $ x + y) (Controls calibrateD (Signal () noSig) (Signal mempty noSig) (Just print))
 
 type Ords = (Ord (Calibrated A), Ord (Calibrated B),Ord (Calibrated C), Ord (Calibrated D))
 
@@ -121,30 +169,5 @@ graphABC = do
     pure $ (,,,) <$> a <*> b <*> c <*> d
 
 
-{-chanBound = 100
-
-createSource :: Int -> [r] -> IO (STM r)
-createSource l xs = do
-    ch <- newTBChanIO chanBound
-    forkIO $ forM_ xs $ \x -> do
-        threadDelay l
-        atomically $ writeTBChan ch x
-    pure $ readTBChan ch
-
-newtype LimitedInteger = LimitedInteger Double
-
-type instance Calibrated LimitedInteger = Int
-type instance CalibrationCoefficient LimitedInteger = Double
-
-mkB k (x,y) = InputLimit k (Bounds x y)
-mkLinear n (x,y) = [x,x + d..y] -}
-{-mkT1 :: IO (InputConfig LimitedInteger)
-mkT1 = do
-    rC <- createSource 100000 [1..100]
-    cC <- createSource 200000 [1, 1.1 .. 2]
-    lCH <- createSource 300000 $ map ("Hard" ,) [0..5]
-    lCS <- createSource 300000 $ map ("Soft" ,) [0..5]
-InputConfig 
-    do \d x -> floor $ d * x-}
 
 

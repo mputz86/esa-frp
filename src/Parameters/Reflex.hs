@@ -6,7 +6,7 @@
 
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances, Rank2Types #-}
 
 module Parameters.Reflex where
 
@@ -77,8 +77,10 @@ startControls :: forall t m r.
               -> Event t () -- ^  kill event
               -> Controls r -- ^ 
               -> m (Dynamic t (Calibrated r))
-startControls rD kE (Controls cm (c0, pullCC) (a0, pullL) mLogR) = do
+startControls rD kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) mLogR) = do
+    pullCC <- liftIO $ pullCCG
     cD <- mkPullEvent kE pullCC >>=  holdDyn c0 
+    pullL <- liftIO $ pullLG
     aD <- mkPullEvent kE pullL >>= foldDyn updateLimits a0 
     let oFD = process cm <$> cD <*> aD
         oE = attachWith ($) (current oFD) (updated rD)
@@ -98,66 +100,25 @@ buildGraph :: ReflexC t m
            -> m a -- ^ anything relevant out of the building (dynamics ?)
 buildGraph _ (Pure x) = pure x
 buildGraph kE (Free y) = case y of
-    Input (InputConfig (r0, pull) cs) f ->  do  
+    Input (InputConfig (Signal r0 pullG) cs) f ->  do  
         -- raw value acquisition
+        pull <- liftIO pullG
         rD <- mkPullEvent kE pull >>=  holdDyn r0 
         startControls rD kE cs >>= buildGraph kE . f
     Synth2 (SyntheticConfig comp cs) aD bD f -> do
         startControls (comp <$> aD <*> bD) kE cs >>= buildGraph kE . f 
 
---------------------------------------------------------------------------------
--- old stuff
---------------------------------------------------------------------------------
+data G q =  G { unG :: forall t. Applicative (Dynamic t) => Free (Graph (Dynamic t)) q}
 
 
-processNetwork :: (Reflex t, Ord (Calibrated r))
-               => CalibrationModel r
-               -> Event t r
-               -> Dynamic t (CalibrationCoefficient r)
-               -> Dynamic t (ActualLimits r)
-               -> Event t (ProcessingOutput r)
-processNetwork calibrationModel rawE coefficientD limitD =
-    attachWith (uncurry $ process calibrationModel) (current $ (,) <$> coefficientD <*> limitD) rawE
-
-setupNetwork :: ( TriggerEvent t m
-                , MonadIO m
-                , PerformEvent t m
-                , MonadIO (Performable m)
-                , MonadHold t m
-                , MonadFix m
-                , Ord (Calibrated r)
-                , Show r
-                , Show (Bounds r)
-                , Show (Calibrated r)
-                , Show (CalibrationCoefficient r)
-                )
-             => ProcessingConfig r
-             -> ProcessingInitial r
-             -> m (Event t ())
-setupNetwork (ProcessingConfig killProcess calibrationModel getRawValue
-              getCoefficient getLimit pushResult)
-    (ProcessingInitial initialCoefficient initialLimits) = do
-        (kE, sendKill) <- newTriggerEvent
-        rawE           <- mkPullEvent kE getRawValue
-        coefficientE   <- mkPullEvent kE getCoefficient
-        limitE         <- mkPullEvent kE getLimit
-        _              <- liftIO $ forkIO $ killProcess >>= sendKill
-        coefficientD   <- holdDyn initialCoefficient coefficientE
-        limitD         <- foldDyn updateLimits initialLimits limitE
-        performEvent_ $ liftIO . pushResult
-            <$> processNetwork calibrationModel rawE coefficientD limitD
-        pure kE
-
-runNetwork :: ( Ord (Calibrated r)
-              , Show r
-              , Show (Bounds r)
-              , Show (Calibrated r)
-              , Show (CalibrationCoefficient r)
-              )
-           => ProcessingConfig r
-           -> ProcessingInitial r
+runNetwork :: G ()
            -> IO ()
-runNetwork c i = do
+           -> IO ()
+runNetwork graph k = do
     print "Run with Reflex"
-    basicHostWithQuit 100 $ setupNetwork c i
-
+    basicHostWithQuit 100 $ case graph of 
+        G g -> do
+            (kE , kIO) <- newTriggerEvent
+            liftIO $ forkIO $ k >>= kIO
+            _ <- buildGraph kE g
+            pure kE 
