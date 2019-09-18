@@ -74,11 +74,11 @@ startControls :: forall t m r.
               ( Ord (Calibrated r)
               , ReflexC t m 
               )
-              => Dynamic t r -- ^ input signal
-              -> Event t () -- ^  kill event
+              => Event t () -- ^  kill event
               -> Controls r -- ^ 
+              -> Dynamic t r -- ^ input signal
               -> m (Dynamic t (ProcessingOutput r))
-startControls rD kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) ) = do
+startControls kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) ) rD = do
     pullCC <- liftIO $ pullCCG
     cD <- mkPullEvent kE pullCC >>=  holdDyn c0 
     pullL <- liftIO $ pullLG
@@ -104,14 +104,15 @@ buildGraph
     -> m (CableD t k) -- ^ anything relevant out of the building (dynamics ?)
 buildGraph _ (Pure x) = pure mempty
 buildGraph kE (Free y) = case y of
-    Input (InputConfig (Signal r0 pullG) cs (k, i)) f -> do
-        -- raw value acquisition
-        pull <- liftIO pullG
-        rD <- mkPullEvent kE pull >>= holdDyn r0
-        poD <- startControls rD kE cs
-        commonPart k f poD
-    Synth2 (SyntheticConfig comp cs (k, i)) aD bD f   -> startControls
-        (comp <$> aD <*> bD) kE cs >>= commonPart k f
+    Input (InputConfig (Signal r0 pullG) cs (k, i)) f 
+        -> liftIO pullG 
+        >>= mkPullEvent kE 
+        >>= holdDyn r0 
+        >>= startControls kE cs 
+        >>= commonPart k f 
+    Synth2 (SyntheticConfig comp cs (k, i)) aD bD f   
+        -> startControls kE cs (comp <$> aD <*> bD) 
+        >>= commonPart k f
   where commonPart
             :: k (Bool, ProcessingOutput r)
             -> (Dynamic t (Calibrated r) -> Free (GraphR t k) a)
@@ -128,7 +129,7 @@ buildGraph kE (Free y) = case y of
 -- argument
 newtype G k = G 
     (   forall t m
-    .   (ReflexC t m, Applicative (Dynamic t)) 
+    .   ( ReflexC t m, Applicative (Dynamic t)) 
      => ( Free (GraphR t k) () , CableD t k -> m ())
     )
 
