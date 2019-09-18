@@ -85,9 +85,9 @@ startControls :: forall t m r.
               -> m (Dynamic t (ProcessingOutput r), Event t (CalibrationCoefficient r))
 startControls kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) ) rD = do
     pullCC <- liftIO $ pullCCG
-    cD <- mkPullEvent kE pullCC >>=  holdDyn c0 
+    cD <- mkPullEvent kE (atomically pullCC) >>=  holdDyn c0 
     pullL <- liftIO $ pullLG
-    aD <- mkPullEvent kE pullL >>= foldDyn updateLimits a0 
+    aD <- mkPullEvent kE (atomically pullL) >>= foldDyn updateLimits a0 
     -- produce a ProcessingOutput dynamic that fires only when rD changes
     let crD = processNode cm <$> cD <*> aD <*> rD
     r0 <- sample $ current crD
@@ -111,13 +111,13 @@ buildGraph
     -> m (CableD t tag k, CableE t tag k) -- ^ anything relevant out of the building (dynamics ?)
 buildGraph _ (Pure x) = pure mempty
 buildGraph kE (Free y) = case y of
-    Input (InputConfig (Signal r0 pullG) cs k) t f 
+    Input (Node (InputConfig (Signal r0 pullG)) cs k ) t f 
         -> liftIO pullG 
-        >>= mkPullEvent kE 
+        >>= mkPullEvent kE . atomically 
         >>= holdDyn r0 
         >>= startControls kE cs 
         >>= commonPart k t f 
-    Synth2 (SyntheticConfig comp cs k) t aD bD f   
+    Synth2 (Node  (SyntheticConfig comp) cs k) t aD bD f   
         -> startControls kE cs (comp <$> aD <*> bD) 
         >>= commonPart k t f
   where commonPart

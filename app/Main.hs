@@ -11,7 +11,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies, DeriveFunctor #-}
+{-# LANGUAGE TypeFamilies, DeriveFunctor, BlockArguments #-}
 
 module Main where
 
@@ -48,7 +48,7 @@ data List x a where
 event :: Int -> x -> Free (List x) ()
 event t x = liftF $ Element t x ()
 
-unroll :: Free (List x) a -> IO (IO x)
+unroll :: Free (List x) a -> IO (STM x)
 unroll y = do
     ch <- newTBChanIO 100
     let
@@ -58,9 +58,9 @@ unroll y = do
             atomically (writeTBChan ch x) 
             go f
     forkIO $ go y
-    pure $ atomically $ readTBChan ch
+    pure $ readTBChan ch
 
-noSig x = Signal x $ unroll $ pure ()
+noSig x = Signal x $ pure retry
 
 someInts :: Num a => Int -> Signal a a 
 someInts n = Signal 0 $ unroll $ do
@@ -79,32 +79,57 @@ someBools n = Signal False $ unroll $ do
 --------------------------------------------------------------------------------
 -- example
 --------------------------------------------------------------------------------
-newtype AnInt = AnInt Int
-  deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+  -- deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
 
+newtype ABool = ABool Bool deriving (Show)
+type instance Calibrated ABool = Bool
+type instance CalibrationCoefficient ABool = ()
+
+calibrateABool _ (ABool x) = x
+
+newtype AnInt = AnInt Int deriving (Num, Show)
 type instance Calibrated AnInt = Int
-
 type instance CalibrationCoefficient AnInt = Bool
 
-calibrateA False (AnInt x) = x
-calibrateA True (AnInt x) = x*2
+calibrateAInt False (AnInt x) = x
+calibrateAInt True (AnInt x) = x*2
 
 data T a where
     TA :: T (ProcessingOutput AnInt)
-    TAC :: T Bool
+    TBC :: T Bool
+    TB :: T (ProcessingOutput ABool)
+    TNil :: T ()
 
 deriveGCompare ''T
 deriveGEq ''T
 
 
-iA :: Int -> Int -> InputConfig T AnInt
-iA n cn = InputConfig (someInts n)
-    (Controls calibrateA (someBools cn) (noSig mempty)) (OutputKeys TA TAC)
+iA :: Int -> Int -> Node InputConfig T AnInt
+iA n cn = Node 
+    do InputConfig $ someInts n
+    do Controls calibrateAInt (someBools cn) (noSig mempty) 
+    do OutputKeys TA TBC
 
-sAA :: Int -> SyntheticConfig T (Calibrated AnInt) (Calibrated AnInt) AnInt
-sAA cn = SyntheticConfig (\x y -> AnInt $ x + y)
-    (Controls calibrateA (someBools cn) (noSig mempty)) (OutputKeys TA TAC)
+iABool :: Int -> Node InputConfig T ABool
+iABool n  = Node 
+    do InputConfig $ signalL %~ ABool $ ABool <$> someBools n
+    do Controls calibrateABool (noSig ()) (noSig mempty) 
+    do OutputKeys TB TNil
 
+sAA :: Int -> Node (SyntheticConfig (Calibrated AnInt) (Calibrated AnInt)) T AnInt
+sAA cn = Node 
+    do SyntheticConfig $ \x y -> AnInt $ x + y
+    do Controls calibrateAInt (someBools cn) (noSig mempty) 
+    do OutputKeys TA TBC
+
+gateG :: Int -> Node (SyntheticConfig (Calibrated ABool) (Calibrated AnInt)) T AnInt
+gateG cn = Node 
+    do SyntheticConfig 
+        do \x y -> AnInt $ case x of
+                True -> y
+                False -> 0
+    do Controls calibrateAInt (someBools cn) (noSig mempty) 
+    do OutputKeys TA TBC
 
 type Ords = (Ord (Calibrated AnInt))
 
@@ -117,7 +142,10 @@ graphABC = do
     e <- input (iA 700 1500) "E"
     c <- synth2 (sAA 200) "C" a b 
     d <- synth2 (sAA 500) "D" a c 
-    e <- synth2 (sAA 1100) "F" a e 
+    e <- input (iA 700 1500) "E"
+    f <- synth2 (sAA 1100) "F" a e 
+    g <- input (iABool 200) "G" 
+    synth2 (gateG 550) "H" g f
     pure ()
 
 
@@ -137,16 +165,20 @@ reportT m = [ "----------value--------"
             , prettyInput TA "D" m 
             , prettyInput TA "E" m 
             , prettyInput TA "F" m 
+            , prettyInput TB "G" m 
+            , prettyInput TA "H" m 
             ]
 
 reportCT :: DMap T (Map Text) -> [Text]
 reportCT m = concat [ ["-----coefficient------"]
-            , prettyInputM TAC "A" m 
-            , prettyInputM TAC "B" m 
-            , prettyInputM TAC "C" m 
-            , prettyInputM TAC "D" m 
-            , prettyInputM TAC "E" m 
-            , prettyInputM TAC "F" m 
+            , prettyInputM TBC "A" m 
+            , prettyInputM TBC "B" m 
+            , prettyInputM TBC "C" m 
+            , prettyInputM TBC "D" m 
+            , prettyInputM TBC "E" m 
+            , prettyInputM TBC "F" m 
+            , prettyInputM TNil "G" m 
+            , prettyInputM TBC "H" m 
             ]
 
 

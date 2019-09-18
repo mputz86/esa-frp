@@ -123,9 +123,20 @@ processNode m c al r = let cr = m c r in ProcessingOutput r cr (checkLimits cr a
 -- computational nodes configuration
 --------------------------------------------------------------------------------
 
--- | a signal folding x into a, the acquiring part is nested to support booting 
-data Signal a x = Signal a (IO (IO x))
 
+data Node q k r = Node
+    { nodeComputation :: q r
+    , nodeControls :: Controls r
+    , nodeKeys :: OutputKeys k r 
+    }
+
+
+
+-- | a signal folding x into a, the acquiring part is nested to support booting 
+data Signal a x = Signal a (IO (STM x))
+    deriving Functor
+
+signalL f (Signal x y) = (\x' -> Signal x' y) <$> f x
 -- | definition of common controls common to input nodes and synthetic nodes
 data  Controls r = Controls 
     { c_calibrationModel :: CalibrationModel r
@@ -136,25 +147,15 @@ data  Controls r = Controls
     -- ^ how to wait for a single limit change
     }
 
-
 data OutputKeys k r = OutputKeys
     {   processingOutput :: k (ProcessingOutput r)
     ,   coefficientOutput :: k (CalibrationCoefficient r)
     }
 
--- | full configuration of the process
-data InputConfig k r = InputConfig
-    { i_pullRawParameter :: Signal r r
-    -- ^ how to wait for a row parameter
-    , i_controls :: Controls r
-    , i_keys :: OutputKeys k r 
-    }
+newtype InputConfig r = InputConfig (Signal r r)
 
-data SyntheticConfig k a b r = SyntheticConfig
-    {   s_compose :: a -> b -> r
-    ,   s_controls :: Controls r
-    ,   s_keys :: OutputKeys k r
-    }
+newtype SyntheticConfig a b r = SyntheticConfig (a -> b -> r)
+    
 
 --------------------------------------------------------------------------------
 -- functor graph definition form a free monad
@@ -162,15 +163,16 @@ data SyntheticConfig k a b r = SyntheticConfig
 
 -- | a DSL to represent graph of synthetic parameters
 data Graph t k d a where
+
     -- | intropduce an input
     Input   :: Ord (Calibrated r) 
-            => InputConfig k r 
+            => Node InputConfig k r 
             -> t
             -> (d  (Calibrated r) -> a) 
             -> Graph t k d a
     -- | introduce a syntetic parameter depending on 2 others
     Synth2  :: Ord (Calibrated r) 
-            => SyntheticConfig k b c r 
+            => Node (SyntheticConfig b c) k  r 
             -> t
             -> d b 
             -> d c 
@@ -186,14 +188,14 @@ type GraphDSL t k d a = Free (Graph t k d) a
 --------------------------------------------------------------------------------
 
 input :: Ord (Calibrated r)
-      => InputConfig k r -- ^ the input configuration
+      => Node (InputConfig) k r -- ^ the input configuration
       -> t
       -> Free (Graph t k d) (d (Calibrated r)) -- ^ output signal
 
 input c t = liftF $ Input c t identity
 
 synth2 :: Ord (Calibrated r)
-       => SyntheticConfig k b c r -- ^ the synthetic configuration
+       => Node (SyntheticConfig b c) k r -- ^ the synthetic configuration
        -> t
        -> d b -- ^ first input signal
        -> d c -- ^ second input signal
