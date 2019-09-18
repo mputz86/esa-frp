@@ -43,7 +43,8 @@ import           Data.Time
 import           Parameters.Model
 
 import qualified Prelude
-
+import Data.GADT.Compare
+import Data.GADT.Compare.TH
 import           Protolude
 
 
@@ -53,21 +54,21 @@ import           Protolude
 --------------------------------------------------------------------------------
 
 -- | a DSL to represent graph of synthetic parameters
-data Graph d a where
+data Graph k d a where
     -- | intropduce an input
     Input   :: Ord (Calibrated r) 
-            => InputConfig r 
+            => InputConfig k r 
             -> (d  (Calibrated r) -> a) 
-            -> Graph d a
+            -> Graph k d a
     -- | introduce a syntetic parameter depending on 2 others
     Synth2  :: Ord (Calibrated r) 
-            => SyntheticConfig b c r 
+            => SyntheticConfig k b c r 
             -> d b 
             -> d c 
             -> (d (Calibrated r) -> a) 
-            -> Graph d a
+            -> Graph k d a
 
-deriving instance Functor (Graph d)
+deriving instance Functor (Graph k d)
 
 
 --------------------------------------------------------------------------------
@@ -75,15 +76,15 @@ deriving instance Functor (Graph d)
 --------------------------------------------------------------------------------
 
 input :: Ord (Calibrated r)
-         => InputConfig r -- ^ the input configuration
-         -> Free (Graph d) (d (Calibrated r)) -- ^ output signal
+         => InputConfig k r -- ^ the input configuration
+         -> Free (Graph k d) (d (Calibrated r)) -- ^ output signal
 input c = liftF $ Input c identity
 
 synth2 :: Ord (Calibrated r)
-       => SyntheticConfig b c r -- ^ the synthetic configuration
+       => SyntheticConfig k b c r -- ^ the synthetic configuration
        -> d b -- ^ first input signal
        -> d c -- ^ second input signal
-       -> Free (Graph d) (d (Calibrated r)) -- ^ output signal
+       -> Free (Graph k d) (d (Calibrated r)) -- ^ output signal
 synth2 c a b = liftF $ Synth2 c a b identity
 
 
@@ -123,56 +124,85 @@ someInts = unroll $ do
 --------------------------------------------------------------------------------
 -- example
 --------------------------------------------------------------------------------
-
-
 newtype A = A Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
 newtype B = B Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
 newtype C = C Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
 newtype D = D Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+newtype E = E Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+newtype F = F Int deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
 
 type instance Calibrated A = Int
 type instance Calibrated B = Int
 type instance Calibrated C = Int
 type instance Calibrated D = Int
+type instance Calibrated E = Int
+type instance Calibrated F = Int
 
 type instance CalibrationCoefficient A = ()
 type instance CalibrationCoefficient B = ()
 type instance CalibrationCoefficient C = ()
 type instance CalibrationCoefficient D = ()
+type instance CalibrationCoefficient E = ()
+type instance CalibrationCoefficient F = ()
 
 calibrateA () (A x) = x
 calibrateB () (B x) = x
 calibrateC () (C x) = x
 calibrateD () (D x) = x
+calibrateE () (E x) = x
+calibrateF () (F x) = x
 
-iA :: Chan Log ->  InputConfig A 
-iA ch = InputConfig (Signal 0 someInts) (Controls calibrateA (noSig ()) (noSig mempty ) 
-        (Just $ writeChan ch . InputLog "A" . show))
+data T a where
+    TA :: T (Bool, ProcessingOutput A)
+    TB :: T (Bool, ProcessingOutput B)
+    TC :: T (Bool, ProcessingOutput C)
+    TD :: T (Bool, ProcessingOutput D)
+    TE :: T (Bool, ProcessingOutput E)
+    TF :: T (Bool, ProcessingOutput F)
 
-iB :: Chan Log -> InputConfig B
-iB ch = InputConfig (Signal 0 someInts) (Controls calibrateB (noSig () ) (noSig mempty ) 
-        (Just $ writeChan ch . InputLog "B" . show))
+deriveGCompare ''T
+deriveGEq ''T
 
-sABC :: Chan Log -> SyntheticConfig (Calibrated A) (Calibrated B) C
-sABC ch = SyntheticConfig (\x y -> C $ x + y) (Controls calibrateC (noSig () ) (noSig mempty ) 
-        (Just $ writeChan ch . SyncLog "C" . show))
 
-sACD :: Chan Log -> SyntheticConfig (Calibrated A) (Calibrated C) D
-sACD ch = SyntheticConfig (\x y -> D $ x + y) (Controls calibrateD (noSig () ) (noSig mempty ) 
-        (Just $ writeChan ch . SyncLog "D" . show))
 
-type Ords = (Ord (Calibrated A), Ord (Calibrated B),Ord (Calibrated C), Ord (Calibrated D))
+iA :: InputConfig T A
+iA = InputConfig (Signal 0 someInts)
+    (Controls calibrateA (noSig ()) (noSig mempty)) (TA, "A")
+
+iB :: InputConfig T B
+iB = InputConfig (Signal 0 someInts)
+    (Controls calibrateB (noSig ()) (noSig mempty)) (TB, "B")
+
+iE :: InputConfig T E
+iE = InputConfig (Signal 0 someInts)
+    (Controls calibrateE (noSig ()) (noSig mempty)) (TE, "E")
+
+sABC :: SyntheticConfig T (Calibrated A) (Calibrated B) C
+sABC = SyntheticConfig (\x y -> C $ x + y)
+    (Controls calibrateC (noSig ()) (noSig mempty)) (TC, "C")
+
+sACD :: SyntheticConfig T (Calibrated A) (Calibrated C) D
+sACD = SyntheticConfig (\x y -> D $ x + y)
+    (Controls calibrateD (noSig ()) (noSig mempty)) (TD, "D")
+
+sAEF :: SyntheticConfig T (Calibrated A) (Calibrated E) F
+sAEF = SyntheticConfig (\x y -> F $ x + y)
+    (Controls calibrateF (noSig ()) (noSig mempty)) (TF, "F")
+
+
+type Ords = (Ord (Calibrated A), Ord (Calibrated B),Ord (Calibrated C), Ord (Calibrated D), Ord (Calibrated F), Ord (Calibrated E))
 
 graphABC 
     :: (Applicative d , Ords)
-    => Chan Log
-    -> Free (Graph d) (d (Calibrated A, Calibrated B, Calibrated C, Calibrated D))
-graphABC ch = do
-    a <- input $ iA ch
-    b <- input $ iB ch
-    c <- synth2 (sABC ch) a b 
-    d <- synth2 (sACD ch) a c 
-    pure $ (,,,) <$> a <*> b <*> c <*> d
+    =>  Free (Graph T d) ()
+graphABC = do
+    a <- input iA 
+    b <- input iB 
+    e <- input iE 
+    c <- synth2 sABC a b 
+    d <- synth2 sACD a c 
+    e <- synth2 sAEF a e 
+    pure ()
 
 
 

@@ -75,10 +75,11 @@ data ProcessingInitial r = ProcessingInitial
 data Signal a x = Signal a (IO (IO x))
 
 -- | full configuration of the process
-data InputConfig r = InputConfig
+data InputConfig k r = InputConfig
     { i_pullRawParameter :: Signal r r
     -- ^ how to wait for a row parameter
     , i_controls :: Controls r
+    , i_keys :: (k (Bool, ProcessingOutput r), Text) 
     }
 
 data  Controls r = Controls 
@@ -88,13 +89,12 @@ data  Controls r = Controls
     -- ^ how to wait for a calibration coefficient change
     , c_pullLimit :: Signal (ActualLimits r) (InputLimit r)
     -- ^ how to wait for a single limit change
-    , c_logResult :: Maybe (ProcessingOutput r -> IO ())
-    -- ^ how to push results, dangerous if slower than pullRawParameter
     }
 
-data SyntheticConfig a b r = SyntheticConfig
+data SyntheticConfig k a b r = SyntheticConfig
     {   s_compose :: a -> b -> r
     ,   s_controls :: Controls r
+    ,   s_keys :: (k (Bool, ProcessingOutput r), Text)
     }
 
 data Bounds r
@@ -160,18 +160,4 @@ process :: (Ord (Calibrated r))
         -> ProcessingOutput r
 process m c al r = let cr = m c r in ProcessingOutput r cr (checkLimits cr al)
 
-data Log = SyncLog Text Text | InputLog Text Text deriving (Read, Show)
-
-reversingBucket :: Chan Log -> IO (Chan [Log])
-reversingBucket ch = do
-    nch <- newChan
-    let go ls = do
-            x <- readChan ch
-            case x of
-                 InputLog k v -> do
-                     writeChan nch $ x:ls
-                     go []
-                 SyncLog k v -> go (x:ls)
-    forkIO $ go []
-    pure nch
 

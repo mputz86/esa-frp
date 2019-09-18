@@ -6,7 +6,7 @@
 
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances, Rank2Types #-}
+{-# LANGUAGE UndecidableInstances, Rank2Types, OverloadedStrings #-}
 
 module Parameters.Reflex where
 
@@ -20,7 +20,7 @@ import qualified Data.Map               as M
 import qualified Data.Set               as S
 import qualified Data.Text              as T
 import           Data.Time
-
+import Data.Dependent.Map
 import           Parameters.Model
 
 import qualified Prelude                (Show, show)
@@ -77,57 +77,97 @@ startControls :: forall t m r.
               => Dynamic t r -- ^ input signal
               -> Event t () -- ^  kill event
               -> Controls r -- ^ 
-              -> m (Dynamic t (Calibrated r))
-startControls rD kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) mLogR) = do
+              -> m (Dynamic t (ProcessingOutput r))
+startControls rD kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) ) = do
     pullCC <- liftIO $ pullCCG
     cD <- mkPullEvent kE pullCC >>=  holdDyn c0 
     pullL <- liftIO $ pullLG
     aD <- mkPullEvent kE pullL >>= foldDyn updateLimits a0 
-    let oFD = process cm <$> cD <*> aD
-        oE = attachWith ($) (current oFD) (updated rD)
-    case mLogR of
-        Just logR -> performEvent_ $ (liftIO . logR) <$> oE
-        Nothing   -> pure ()
-    pure $ calibratedValue <$> (oFD <*> rD)
+    pure $ process cm <$> cD <*> aD <*> rD
 
 --------------------------------------------------------------------------------
 -- interpreter, it run the initiators and render the graph in reflex language
 --------------------------------------------------------------------------------
+   {-case mLogR of
+        Just logR -> performEvent_ $ (liftIO . logR) <$> oE
+        Nothing   -> pure ()-}
 
+type Cable k = DMap k Identity
+type CableD t k = Dynamic t (Cable k)
+type GraphR t k = Graph k (Dynamic t)
 
-buildGraph :: ReflexC t m
-           => Event t () -- ^ kill signal
-           -> Free (Graph (Dynamic t)) a -- ^ the graph
-           -> m a -- ^ anything relevant out of the building (dynamics ?)
-buildGraph _ (Pure x) = pure x
+buildGraph
+    :: forall a k t m.
+    (GCompare k, ReflexC t m)
+    => Event t () -- ^ kill signal
+    -> Free (GraphR t k) a  -- ^ the graph
+    -> m (CableD t k) -- ^ anything relevant out of the building (dynamics ?)
+buildGraph _ (Pure x) = pure mempty
 buildGraph kE (Free y) = case y of
-    Input (InputConfig (Signal r0 pullG) cs) f ->  do  
+    Input (InputConfig (Signal r0 pullG) cs (k, i)) f -> do
         -- raw value acquisition
         pull <- liftIO pullG
-        rD <- mkPullEvent kE pull >>=  holdDyn r0 
-        startControls rD kE cs >>= buildGraph kE . f
-    Synth2 (SyntheticConfig comp cs) aD bD f -> do
-        startControls (comp <$> aD <*> bD) kE cs >>= buildGraph kE . f 
+        rD <- mkPullEvent kE pull >>= holdDyn r0
+        poD <- startControls rD kE cs
+        commonPart k f poD
+    Synth2 (SyntheticConfig comp cs (k, i)) aD bD f   -> startControls
+        (comp <$> aD <*> bD) kE cs >>= commonPart k f
+  where commonPart
+            :: k (Bool, ProcessingOutput r)
+            -> (Dynamic t (Calibrated r) -> Free (GraphR t k) a)
+            -> Dynamic t (ProcessingOutput r)
+            -> m (CableD t k) -- (CableD k)
+        commonPart k f poD = do
+            posD <- buildGraph kE $ f $ calibratedValue <$> poD
+            chE <- holdDyn False
+                $ leftmost [True <$ updated poD, False <$ updated posD]
+            pure $ (<>) <$> (singleton k . Identity <$> ((,) <$> chE <*> poD))
+                <*> posD
 
-data G q =  G { unG :: forall t. Applicative (Dynamic t) => Chan Log -> Free (Graph (Dynamic t)) q}
+-- | wrap up a generic graph and output handler over any t and m to be passed as
+-- argument
+newtype G k = G 
+    (   forall t m
+    .   (ReflexC t m, Applicative (Dynamic t)) 
+     => ( Free (GraphR t k) () , CableD t k -> m ())
+    )
 
 
-runNetwork :: G () -- ^ a graph forall quantified on 't'
+runNetwork :: GCompare k
+           => G k  -- ^ a graph forall quantified on 't'
            -> IO ()  -- ^ kill (blocking action)
-           -> IO () 
-runNetwork (G g) k = do
+           -> IO ()
+runNetwork g k = do
     print "Run with Reflex"
-    ch <- newChan
-    nch <- reversingBucket ch 
-    forkIO $ forever $ readChan nch >>= pPrint
-    basicHostWithQuit 100 $ do
-            (kE , kIO) <- newTriggerEvent
+    basicHostWithQuit 100 $ case g of
+        G (g, output) -> do
+            (kE, kIO) <- newTriggerEvent
             liftIO $ forkIO $ k >>= kIO
-            _ <- buildGraph kE $ g ch
-            pure kE 
+            buildGraph kE g >>= output
+            pure kE
 
 --------------------------------------------------------------------------------
 -- example
 --------------------------------------------------------------------------------
 
-test1 = runNetwork (G $ \ch -> graphABC ch >> pure ()) (threadDelay $ 10 * 10 ^ 6)
+prettyInput (fired, e) 
+    | fired = "-> " <> show e
+    | True = "   " <>  show e
+
+prettySync (fired, e) 
+    | fired = ">> " <> show e
+    | True = "   " <> show e
+reportT :: DMap T Identity -> [Text]
+reportT m = 
+    [  "-----------------"
+    ,  prettyInput  $  runIdentity $ m ! TA
+    ,  prettyInput  $  runIdentity $ m ! TB
+    ,  prettyInput  $  runIdentity $ m ! TE
+    ,  prettySync $  runIdentity $ m ! TC
+    ,  prettySync $  runIdentity $ m ! TD
+    ,  prettySync $  runIdentity $ m ! TF
+    ]
+
+reportTM e = performEvent_ $ liftIO . mapM_ putText . reportT <$> updated e
+
+test1 = runNetwork (G (graphABC, reportTM)) (threadDelay $ 10 * 10 ^ 6)

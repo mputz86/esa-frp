@@ -39,6 +39,9 @@ dependencies:
 - free
 - optics
 - pretty-simple
+- dependent-map
+- dependent-sum
+- dependent-sum-template
 
 library:
   source-dirs: src
