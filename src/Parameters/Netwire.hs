@@ -21,7 +21,7 @@ import           Data.IORef
 import "netwire" FRP.Netwire
 import           Parameters.Model
 
-
+import Parameters.OldModel
 --
 -- Wire s e m a b
 -- s - time diff, step
@@ -42,7 +42,7 @@ logE = proc x -> do
 calibrationCoefficientWire :: (Show b, Monoid e) =>  WireE s e IO () b  -> b -> Wire s e IO () b
 calibrationCoefficientWire coeffE v = pure v >-- (coeffE >>> hold)
 
-actualLimitWire ::Monoid e =>  WireE s e IO () (InputLimit r) -> ActualLimits r -> Wire s e IO () (ActualLimits r)
+actualLimitWire ::Monoid e =>  WireE s e IO () (InputLimit r) -> LimitsMap r -> Wire s e IO () (LimitsMap r)
 actualLimitWire inputLimitE ial = pure ial >-- (inputLimitE >>> accumE (flip updateLimits) ial >>> hold)
 
 type ShowAll r = (Show r, Show (Calibrated r), Show (CalibrationCoefficient r))
@@ -53,8 +53,8 @@ pushValues push = mkGen_ $ \x -> fmap Right $ push x
 processRawInput
     :: (Ord (Calibrated r)) 
     => CalibrationModel r
-    -> Wire s e IO (CalibrationCoefficient r, ActualLimits r, r) (ProcessingOutput r)
-processRawInput m = mkPure_ $ \(c, al, r) -> Right $ process m c al r
+    -> Wire s e IO (CalibrationCoefficient r, LimitsMap r, r) (ProcessingOutput r)
+processRawInput m = mkPure_ $ \(c, al, r) -> Right $ processNode m c al r
 
 setupNetwork
     :: forall e r s. ( Monoid e,   Ord (Calibrated r), ShowAll r)

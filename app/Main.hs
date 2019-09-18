@@ -1,9 +1,17 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies, PackageImports #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies, DeriveFunctor #-}
 
 module Main where
 
@@ -11,136 +19,141 @@ import           Control.Concurrent.STM
 import           Control.Concurrent.STM.TBChan
 
 import qualified Data.Char                     as C
+import           Data.Dependent.Map
+import           Data.Dependent.Map.Lens
+import           Data.GADT.Compare
+import           Data.GADT.Compare.TH
 import qualified Data.Text                     as T
 import           Data.Time
 
+import           Parameters.Graph
 import           Parameters.Model
-import qualified Parameters.Netwire as   N
-import qualified Parameters.Reflex                    as R
-import qualified Parameters.Streamly                  as S
-
+import           Parameters.Reflex
+import qualified Data.Map as M
+import Control.Monad.Free
 import qualified Prelude
-
+import Control.Lens
 import           Protolude
 
-import qualified Test.QuickCheck.Gen           as Q
+import           Reflex
 
-newtype Bogous = Bogous { unBogous :: Text }
-  deriving (Show, NFData)
+--------------------------------------------------------------------------------
+-- event creation DSL, for testing
+--------------------------------------------------------------------------------
 
-instance Prelude.Show (Bounds Bogous) where
-    show (Bounds (Bogous l) (Bogous h)) = show (T.length l, T.length h)
+data List x a where
+    Element :: Int -> x -> a -> List x a
+    deriving Functor
 
-deriving instance Prelude.Show (InputLimit Bogous)
+event :: Int -> x -> Free (List x) ()
+event t x = liftF $ Element t x ()
 
-instance Eq Bogous where
-    (==) = (==) `on` T.length . unBogous
+unroll :: Free (List x) a -> IO (IO x)
+unroll y = do
+    ch <- newTBChanIO 100
+    let
+        go (Pure _) = pure ()
+        go (Free (Element t x f)) = do
+            threadDelay (t * 1000) 
+            atomically (writeTBChan ch x) 
+            go f
+    forkIO $ go y
+    pure $ atomically $ readTBChan ch
 
-instance Ord Bogous where
-    compare = comparing $ T.length . unBogous
+noSig x = Signal x $ unroll $ pure ()
 
-calibrateBogous :: CalibrationModel Bogous
-calibrateBogous l (Bogous t) = Bogous $ T.map
-    (\c -> if c == l then C.toUpper c else c) t
+someInts :: Num a => Int -> Signal a a 
+someInts n = Signal 0 $ unroll $ do
+    event n 1
+    event 1000 2
+    event 1000 3
+    event 1000 4
+    event 1000 5
 
-type instance CalibrationCoefficient Bogous = Char
+someBools :: Int -> Signal Bool Bool
+someBools n = Signal False $ unroll $ do
+    event n True
+    event 1000 False
+    event 1000 True
+    event 1000 False
+--------------------------------------------------------------------------------
+-- example
+--------------------------------------------------------------------------------
+newtype AnInt = AnInt Int
+  deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
 
-type instance Calibrated Bogous = Bogous
+type instance Calibrated AnInt = Int
 
-bogousGen :: Q.Gen Bogous
-bogousGen = Bogous . toS <$> do
-    l <- Q.elements [1 .. 10]
-    replicateM l (Q.elements "abc")
+type instance CalibrationCoefficient AnInt = Bool
 
-limitGen :: Q.Gen (InputLimit Bogous)
-limitGen = do
-    t <- LimitTag . toS <$> Q.elements ["key1", "key2", "key3"]
-    low <- Bogous . toS . flip replicate 'x' <$> Q.elements [1 .. 5]
-    high <- Bogous . toS . flip replicate 'x' <$> Q.elements [5 .. 10]
-    pure $ InputLimit t (Bounds low high)
+calibrateA False (AnInt x) = x
+calibrateA True (AnInt x) = x*2
 
-data RunConfig = RunConfig
-    { valueDelay       :: Int
-    , chanBound        :: Int
-    , calibrateDelay   :: Int
-    , limitDelay       :: Int
-    , runTime          :: Int
-    , genBogous        :: Bool
-    , sampleEveryValue :: Int
-    }
+data T a where
+    TA :: T (ProcessingOutput AnInt)
+    TAC :: T Bool
 
+deriveGCompare ''T
+deriveGEq ''T
+
+
+iA :: Int -> Int -> InputConfig T AnInt
+iA n cn = InputConfig (someInts n)
+    (Controls calibrateA (someBools cn) (noSig mempty)) (OutputKeys TA TAC)
+
+sAA :: Int -> SyntheticConfig T (Calibrated AnInt) (Calibrated AnInt) AnInt
+sAA cn = SyntheticConfig (\x y -> AnInt $ x + y)
+    (Controls calibrateA (someBools cn) (noSig mempty)) (OutputKeys TA TAC)
+
+
+type Ords = (Ord (Calibrated AnInt))
+
+graphABC 
+    :: (Applicative d , Ords)
+    =>  GraphDSL Text T d ()
+graphABC = do
+    a <- input (iA 0 600) "A" 
+    b <- input (iA 400 1200) "B"
+    e <- input (iA 700 1500) "E"
+    c <- synth2 (sAA 200) "C" a b 
+    d <- synth2 (sAA 500) "D" a c 
+    e <- synth2 (sAA 1100) "F" a e 
+    pure ()
+
+
+prettyInputT name e = name <> ": " <> show e
+
+prettyInput k t m = prettyInputT t $ m ! k M.! t
+prettyInputM k t m = case  m ^? dmix k . ix t of
+    Nothing -> []
+    Just e ->[ prettyInputT t e]
+
+
+reportT :: DMap T (Map Text) -> [Text]
+reportT m = [ "----------value--------"
+            , prettyInput TA "A" m 
+            , prettyInput TA "B" m 
+            , prettyInput TA "C" m 
+            , prettyInput TA "D" m 
+            , prettyInput TA "E" m 
+            , prettyInput TA "F" m 
+            ]
+
+reportCT :: DMap T (Map Text) -> [Text]
+reportCT m = concat [ ["-----coefficient------"]
+            , prettyInputM TAC "A" m 
+            , prettyInputM TAC "B" m 
+            , prettyInputM TAC "C" m 
+            , prettyInputM TAC "D" m 
+            , prettyInputM TAC "E" m 
+            , prettyInputM TAC "F" m 
+            ]
+
+
+reportTM (poD, cD)  = do
+    performEvent_ $ liftIO . mapM_ putText . reportT <$> updated poD
+    performEvent_ $ liftIO . mapM_ putText . reportCT <$> cD
+
+test1 = runNetwork (G (graphABC, reportTM)) (threadDelay $ 10 * 10 ^ 6)
 main :: IO ()
-main = do
-    -- Streamly can run this for max performance. Reflex hangs, since it catches up.
-    -- let c = RunConfig 0 100000 500000 10000000 True 100000
-    -- Runs pretty well for both.
-    -- let c = RunConfig 1 100 100000 500000 10000000 True 100000
-    let milli = 1000
-
-    -- Performance run.
-    let c = RunConfig 0 100 (100*milli) (500*milli) (10000*milli) True 100000
-
-    -- Run and check that initial values are used and output is produced on new raw value. So three values.
-    -- let c = RunConfig (3000*milli) 100 (20000*milli) (20000*milli) (10000*milli) True 1
-    -- Run and check that calibration coefficients are updated.
-    -- let c = RunConfig (2000*milli) 100 (20000*milli) (1000*milli) (10000*milli) True 1
-    -- Run and check that actual limits are updated.
-    -- let c = RunConfig (2000*milli) 100 (1000*milli) (20000*milli) (10000*milli) True 1
-
-    -- Run with Streamly.
-    -- run c S.runNetwork
-    -- Run with Netwire.
-    -- run c N.runNetwork
-    -- Run with Reflex.
-    run c R.runNetwork
-
-valueSource :: NFData a
-            => Int  -- ^ delay
-            -> Maybe a
-            -> TBChan a
-            -> Q.Gen a
-            -> IO ()
-valueSource delay genOrNot valueChan gen = forever $ do
-    threadDelay delay
-    b <- case genOrNot of
-        Nothing -> Q.generate gen
-        Just x  -> pure x
-    atomically $ writeTBChan valueChan b
-
-run :: RunConfig
-    -> (ProcessingConfig Bogous -> ProcessingInitial Bogous -> IO ())
-    -> IO ()
-run RunConfig
-    { .. } networkRunner = do
-        valueChan <- newTBChanIO chanBound
-        calibrateChan <- newTBChanIO chanBound
-        limitChan <- newTBChanIO chanBound
-        count <- newTVarIO 0
-        let c = ProcessingConfig (threadDelay runTime) calibrateBogous
-                (atomically $ readTBChan valueChan)
-                (atomically $ readTBChan calibrateChan)
-                (atomically $ readTBChan limitChan)
-                (\r -> deepseq r $ do
-                     c <- readTVarIO count
-                     if c `mod` sampleEveryValue == 0 then print r else pure ()
-                     atomically . modifyTVar count $ succ)
-            i :: ProcessingInitial Bogous
-            i = ProcessingInitial 'a' mempty
-
-        threadIdValue
-            <- forkIO $ valueSource valueDelay Nothing valueChan bogousGen
-        threadIdCalibrate <- forkIO
-            $ valueSource calibrateDelay Nothing calibrateChan $ Q.elements "abc"
-        threadIdLimit
-            <- forkIO $ valueSource limitDelay Nothing limitChan limitGen
-
-        tStart <- getCurrentTime
-        networkRunner c i
-        tEnd <- getCurrentTime
-        print $ diffUTCTime tEnd tStart
-        resultCount <- atomically $ readTVar count
-        print resultCount
-
-        killThread threadIdLimit
-        killThread threadIdCalibrate
-        killThread threadIdValue
+main = test1

@@ -42,6 +42,7 @@ dependencies:
 - dependent-map
 - dependent-sum
 - dependent-sum-template
+- lens
 
 library:
   source-dirs: src

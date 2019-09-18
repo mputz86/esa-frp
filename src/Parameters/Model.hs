@@ -16,7 +16,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances, DeriveFunctor #-}
 
 module Parameters.Model where
 
@@ -34,10 +34,17 @@ import qualified Prelude                (Show, show)
 
 import           Protolude
 
+import           Control.Monad.Fix
+import           Control.Monad.Free
 
-import qualified Test.QuickCheck.Gen    as Q
 
 -------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- node type families, 'r' is the node type and is also the input type of the
+-- node
+--------------------------------------------------------------------------------
+
+
 -- | model for calibration of values of type 'r'
 type CalibrationModel r = CalibrationCoefficient r -> r -> Calibrated r
 
@@ -47,87 +54,36 @@ type family Calibrated r
 -- | signal type parameter for calibration
 type family CalibrationCoefficient r
 
--- | full configuration of the process
-data ProcessingConfig r = ProcessingConfig
-    { killProcess :: IO ()
-    -- ^ when to stop the process
-    , calibrationModel :: CalibrationModel r
-    -- ^ the chosen calibration model
-    , pullRawParameter :: IO r
-    -- ^ how to wait for a row parameter
-    , pullCalibrationCoefficient :: IO (CalibrationCoefficient r)
-    -- ^ how to wait for a calibration coefficient change
-    , pullLimit :: IO (InputLimit r)
-    -- ^ how to wait for a single limit change
-    , pushResult :: ProcessingOutput r -> IO ()
-    -- ^ how to push results, dangerous if slower than pullRawParameter
-    }
+--------------------------------------------------------------------------------
+-- node data
+--------------------------------------------------------------------------------
 
--- | initial values for the process
-data ProcessingInitial r = ProcessingInitial
-    { initialCalibrationCoefficient :: CalibrationCoefficient r
-    -- ^ initial calibration coefficient value
-    , initialLimits :: ActualLimits r
-    -- ^ inital map of limits
-    }
-
-
-data Signal a x = Signal a (IO (IO x))
-
--- | full configuration of the process
-data InputConfig k r = InputConfig
-    { i_pullRawParameter :: Signal r r
-    -- ^ how to wait for a row parameter
-    , i_controls :: Controls r
-    , i_keys :: (k (Bool, ProcessingOutput r), Text) 
-    }
-
-data  Controls r = Controls 
-    { c_calibrationModel :: CalibrationModel r
-    -- ^ the chosen calibration model
-    , c_pullCalibrationCoefficient :: Signal (CalibrationCoefficient r) (CalibrationCoefficient r)
-    -- ^ how to wait for a calibration coefficient change
-    , c_pullLimit :: Signal (ActualLimits r) (InputLimit r)
-    -- ^ how to wait for a single limit change
-    }
-
-data SyntheticConfig k a b r = SyntheticConfig
-    {   s_compose :: a -> b -> r
-    ,   s_controls :: Controls r
-    ,   s_keys :: (k (Bool, ProcessingOutput r), Text)
-    }
-
+-- | bounds for 'r' based on Ord
 data Bounds r
     = Bounds { boundsLow :: Calibrated r, boundsHigh :: Calibrated r }
   deriving Generic
 
 instance NFData (Calibrated r) => NFData (Bounds r)
 
--- deriving instance (Show r, Show (Calibrated r)) => Show (ProcessingOutput r)
--- | State of the limits.
-type ActualLimits r = Map LimitTag (Bounds r)
-
-newtype LimitTag = LimitTag Text
-  deriving (Eq, Ord, Show, Generic)
-
-instance NFData LimitTag
-
--- | Updating the actual limits.
+-- | instruction to pdate a LimitsMap.
 data InputLimit r
     = InputLimit { inputTag :: LimitTag, inputBounds :: Bounds r }
   deriving Generic
 
 instance (NFData (Calibrated r), NFData r) => NFData (InputLimit r)
 
-data LimitCheck = InLimit
-                | SoftLimitExceeded
-                | HardLimitExceeded
-  deriving Generic
+-- | State of the limits.
+type LimitsMap r = Map LimitTag (Bounds r)
 
-instance NFData LimitCheck
+newtype LimitTag = LimitTag Text
+  deriving (Eq, Ord, Show, Generic)
 
+instance NFData LimitTag
+
+-- | set of which limits have been trespassed
 type LimitExceedings = Set LimitTag
 
+-- | observable status of a node
 data ProcessingOutput r = ProcessingOutput
     { rawValue        :: r
     , calibratedValue :: Calibrated r
@@ -136,28 +92,117 @@ data ProcessingOutput r = ProcessingOutput
   deriving Generic
 
 instance (NFData (Calibrated r), NFData r) => NFData (ProcessingOutput r)
-
 deriving instance (Show r, Show (Calibrated r)) => Show (ProcessingOutput r)
 
-notInLimit :: Ord (Calibrated r) => Calibrated r -> Bounds r -> Bool
-notInLimit r (Bounds l h) = r < l || r > h
+--------------------------------------------------------------------------------
+-- node operations
+--------------------------------------------------------------------------------
 
-checkLimits
-    :: Ord (Calibrated r) => Calibrated r -> ActualLimits r -> LimitExceedings
-checkLimits r al = fold $ do
-    (t, b) <- M.assocs al
-    guard $ notInLimit r b
-    pure $ S.singleton t
-
-updateLimits :: InputLimit r -> ActualLimits r -> ActualLimits r
+updateLimits :: InputLimit r -> LimitsMap r -> LimitsMap r
 updateLimits (InputLimit t v) = M.insert t v
 
-process :: (Ord (Calibrated r))
+processNode :: (Ord (Calibrated r))
         => CalibrationModel r
         -> CalibrationCoefficient r
-        -> ActualLimits r
+        -> LimitsMap r
         -> r
         -> ProcessingOutput r
-process m c al r = let cr = m c r in ProcessingOutput r cr (checkLimits cr al)
+processNode m c al r = let cr = m c r in ProcessingOutput r cr (checkLimits cr al)
+    where
+    notInLimit :: Ord (Calibrated r) => Calibrated r -> Bounds r -> Bool
+    notInLimit r (Bounds l h) = r < l || r > h
+
+    checkLimits
+        :: Ord (Calibrated r) => Calibrated r -> LimitsMap r -> LimitExceedings
+    checkLimits r al = fold $ do
+        (t, b) <- M.assocs al
+        guard $ notInLimit r b
+        pure $ S.singleton t
+
+--------------------------------------------------------------------------------
+-- computational nodes configuration
+--------------------------------------------------------------------------------
+
+-- | a signal folding x into a, the acquiring part is nested to support booting 
+data Signal a x = Signal a (IO (IO x))
+
+-- | definition of common controls common to input nodes and synthetic nodes
+data  Controls r = Controls 
+    { c_calibrationModel :: CalibrationModel r
+    -- ^ the chosen calibration model
+    , c_pullCalibrationCoefficient :: Signal (CalibrationCoefficient r) (CalibrationCoefficient r)
+    -- ^ how to wait for a calibration coefficient change
+    , c_pullLimit :: Signal (LimitsMap r) (InputLimit r)
+    -- ^ how to wait for a single limit change
+    }
+
+
+data OutputKeys k r = OutputKeys
+    {   processingOutput :: k (ProcessingOutput r)
+    ,   coefficientOutput :: k (CalibrationCoefficient r)
+    }
+
+-- | full configuration of the process
+data InputConfig k r = InputConfig
+    { i_pullRawParameter :: Signal r r
+    -- ^ how to wait for a row parameter
+    , i_controls :: Controls r
+    , i_keys :: OutputKeys k r 
+    }
+
+data SyntheticConfig k a b r = SyntheticConfig
+    {   s_compose :: a -> b -> r
+    ,   s_controls :: Controls r
+    ,   s_keys :: OutputKeys k r
+    }
+
+--------------------------------------------------------------------------------
+-- functor graph definition form a free monad
+--------------------------------------------------------------------------------
+
+-- | a DSL to represent graph of synthetic parameters
+data Graph t k d a where
+    -- | intropduce an input
+    Input   :: Ord (Calibrated r) 
+            => InputConfig k r 
+            -> t
+            -> (d  (Calibrated r) -> a) 
+            -> Graph t k d a
+    -- | introduce a syntetic parameter depending on 2 others
+    Synth2  :: Ord (Calibrated r) 
+            => SyntheticConfig k b c r 
+            -> t
+            -> d b 
+            -> d c 
+            -> (d (Calibrated r) -> a) 
+            -> Graph t k d a
+
+deriving instance Functor (Graph t k d)
+ 
+type GraphDSL t k d a = Free (Graph t k d) a
+
+--------------------------------------------------------------------------------
+-- Graph compositional verbs
+--------------------------------------------------------------------------------
+
+input :: Ord (Calibrated r)
+      => InputConfig k r -- ^ the input configuration
+      -> t
+      -> Free (Graph t k d) (d (Calibrated r)) -- ^ output signal
+
+input c t = liftF $ Input c t identity
+
+synth2 :: Ord (Calibrated r)
+       => SyntheticConfig k b c r -- ^ the synthetic configuration
+       -> t
+       -> d b -- ^ first input signal
+       -> d c -- ^ second input signal
+       -> Free (Graph t k d) (d (Calibrated r)) -- ^ output signal
+
+synth2 c t a b = liftF $ Synth2 c t a b identity
+
+
+
+
 
 

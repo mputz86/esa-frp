@@ -17,6 +17,7 @@ import qualified Data.Text              as T
 import           Data.Time
 
 import           Parameters.Model
+import           Parameters.OldModel
 
 import qualified Prelude                (Show, show)
 
@@ -32,7 +33,7 @@ import Optics.State.Operators
 data Status r = Status
     { _statusCalibrationModel       :: CalibrationModel r
     , _statusCalibrationCoefficient :: CalibrationCoefficient r
-    , _statusActualLimits           :: ActualLimits r
+    , _statusLimitsMap           :: LimitsMap r
     }
 makeLenses ''Status
 
@@ -72,14 +73,14 @@ setupNetwork c@(ProcessingConfig killProcess _ _ _ _ pushResult) = do
     case event of
         InputEvent (RawValue v) -> do
             Status m co l <- get
-            let r = process m co l v
+            let r = processNode m co l v
             liftIO $ pushResult r
             return $ OutputResult r
         InputEvent (UpdateCalibrationCoefficient nc) -> do
             statusCalibrationCoefficient .= nc
             gets Updated
         InputEvent (UpdateLimit nl) -> do
-            statusActualLimits %= updateLimits nl 
+            statusLimitsMap %= updateLimits nl 
             gets Updated
         Kill -> return Quit
 

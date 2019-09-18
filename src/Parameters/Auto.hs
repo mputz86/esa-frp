@@ -53,14 +53,14 @@ calibrationCoefficientAuto :: AutoE  IO () b  -> b -> Auto IO () b
 calibrationCoefficientAuto coeffE v = coeffE >>> holdWith_ v
 
 
-actualLimitAuto ::  AutoE  IO () (InputLimit r) -> ActualLimits r -> Auto  IO () (ActualLimits r)
+actualLimitAuto ::  AutoE  IO () (InputLimit r) -> LimitsMap r -> Auto  IO () (LimitsMap r)
 actualLimitAuto inputLimitE ial = inputLimitE >>> scanB_ (flip updateLimits) ial 
 
 processRawInput
     :: (Ord (Calibrated r)) 
     => CalibrationModel r
-    -> Auto  IO (CalibrationCoefficient r, ActualLimits r, r) (ProcessingOutput r)
-processRawInput m = arr $ \(c, al, r) -> process m c al r
+    -> Auto  IO (CalibrationCoefficient r, LimitsMap r, r) (ProcessingOutput r)
+processRawInput m = arr $ \(c, al, r) -> processNode m c al r
 
 pushValues :: (ProcessingOutput r -> IO ()) -> Auto  IO (ProcessingOutput r) ()
 pushValues push = arrM push
