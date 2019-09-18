@@ -132,7 +132,7 @@ data Node q k r = Node
 
 
 
--- | a signal folding x into a, the acquiring part is nested to support booting 
+-- | a signal folding x into a, the acquiring part is nested to support self booting 
 data Signal a x = Signal a (IO (STM x))
     deriving Functor
 
@@ -194,14 +194,14 @@ input :: Ord (Calibrated r)
 
 input c t = liftF $ Input c t identity
 
-synth2 :: Ord (Calibrated r)
+synthetic :: Ord (Calibrated r)
        => Node (SyntheticConfig b c) k r -- ^ the synthetic configuration
        -> t
        -> d b -- ^ first input signal
        -> d c -- ^ second input signal
        -> Free (Graph t k d) (d (Calibrated r)) -- ^ output signal
 
-synth2 c t a b = liftF $ Synth2 c t a b identity
+synthetic c t a b = liftF $ Synth2 c t a b identity
 
 
 

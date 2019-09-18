@@ -104,20 +104,20 @@ deriveGCompare ''T
 deriveGEq ''T
 
 
-iA :: Int -> Int -> Node InputConfig T AnInt
-iA n cn = Node 
+getAInt :: Int -> Int -> Node InputConfig T AnInt
+getAInt n cn = Node 
     do InputConfig $ someInts n
     do Controls calibrateAInt (someBools cn) (noSig mempty) 
     do OutputKeys TA TBC
 
-iABool :: Int -> Node InputConfig T ABool
-iABool n  = Node 
+getABool :: Int -> Node InputConfig T ABool
+getABool n  = Node 
     do InputConfig $ signalL %~ ABool $ ABool <$> someBools n
     do Controls calibrateABool (noSig ()) (noSig mempty) 
     do OutputKeys TB TNil
 
-sAA :: Int -> Node (SyntheticConfig (Calibrated AnInt) (Calibrated AnInt)) T AnInt
-sAA cn = Node 
+addG :: Int -> Node (SyntheticConfig (Calibrated AnInt) (Calibrated AnInt)) T AnInt
+addG cn = Node 
     do SyntheticConfig $ \x y -> AnInt $ x + y
     do Controls calibrateAInt (someBools cn) (noSig mempty) 
     do OutputKeys TA TBC
@@ -137,15 +137,15 @@ graphABC
     :: (Applicative d , Ords)
     =>  GraphDSL Text T d ()
 graphABC = do
-    a <- input (iA 0 600) "A" 
-    b <- input (iA 400 1200) "B"
-    e <- input (iA 700 1500) "E"
-    c <- synth2 (sAA 200) "C" a b 
-    d <- synth2 (sAA 500) "D" a c 
-    e <- input (iA 700 1500) "E"
-    f <- synth2 (sAA 1100) "F" a e 
-    g <- input (iABool 200) "G" 
-    synth2 (gateG 550) "H" g f
+    a <- input (getAInt 0 600) "A" 
+    b <- input (getAInt 400 1200) "B"
+    e <- input (getAInt 700 1500) "E"
+    c <- synthetic (addG 200) "C" a b 
+    d <- synthetic (addG 500) "D" a c 
+    e <- input (getAInt 700 1500) "E"
+    f <- synthetic (addG 1100) "F" a e 
+    g <- input (getABool 200) "G" 
+    _ <- synthetic (gateG 550) "H" g f
     pure ()
 
 
@@ -156,7 +156,7 @@ prettyInputM k t m = case  m ^? dmix k . ix t of
     Nothing -> []
     Just e ->[ prettyInputT t e]
 
-
+-- | comment out single lines to suppress output for given node
 reportT :: DMap T (Map Text) -> [Text]
 reportT m = [ "----------value--------"
             , prettyInput TA "A" m 
