@@ -26,7 +26,6 @@ import           Data.GADT.Compare.TH
 import qualified Data.Text                     as T
 import           Data.Time
 
-import           Parameters.Graph
 import           Parameters.Model
 import           Parameters.Reflex
 import qualified Data.Map as M
@@ -187,5 +186,6 @@ reportTM (poD, cD)  = do
     performEvent_ $ liftIO . mapM_ putText . reportCT <$> cD
 
 test1 = runNetwork (G (graphABC, reportTM)) (threadDelay $ 10 * 10 ^ 6)
+
 main :: IO ()
 main = test1
