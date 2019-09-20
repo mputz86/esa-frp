@@ -133,8 +133,8 @@ gateG cn = Node
 type Ords = (Ord (Calibrated AnInt))
 
 graphABC 
-    :: (Applicative d , Ords)
-    =>  GraphDSL Text T d ()
+    :: (Applicative d, Ords)
+    => GraphDSL Text T d ()
 graphABC = do
     a <- input (getAInt 0 600) "A" 
     b <- input (getAInt 400 1200) "B"
@@ -147,13 +147,12 @@ graphABC = do
     _ <- synthetic (gateG 550) "H" g f
     pure ()
 
-
 prettyInputT name e = name <> ": " <> show e
 
 prettyInput k t m = prettyInputT t $ m ! k M.! t
 prettyInputM k t m = case  m ^? dmix k . ix t of
     Nothing -> []
-    Just e ->[ prettyInputT t e]
+    Just e -> [prettyInputT t e]
 
 -- | comment out single lines to suppress output for given node
 reportT :: DMap T (Map Text) -> [Text]
@@ -179,7 +178,6 @@ reportCT m = concat [ ["-----coefficient------"]
             , prettyInputM TNil "G" m 
             , prettyInputM TBC "H" m 
             ]
-
 
 reportTM (poD, cD)  = do
     performEvent_ $ liftIO . mapM_ putText . reportT <$> updated poD

@@ -7,7 +7,7 @@
 -- Stability   :  experimental
 -- Portability :  unknown
 --
--- A model to express live parameter refinement 
+-- A model to express live parameter refinement
 --
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -94,6 +94,7 @@ data ProcessingOutput r = ProcessingOutput
 instance (NFData (Calibrated r), NFData r) => NFData (ProcessingOutput r)
 deriving instance (Show r, Show (Calibrated r)) => Show (ProcessingOutput r)
 
+
 --------------------------------------------------------------------------------
 -- node operations
 --------------------------------------------------------------------------------
@@ -119,26 +120,25 @@ processNode m c al r = let cr = m c r in ProcessingOutput r cr (checkLimits cr a
         guard $ notInLimit r b
         pure $ S.singleton t
 
+
 --------------------------------------------------------------------------------
 -- computational nodes configuration
 --------------------------------------------------------------------------------
 
-
 data Node q k r = Node
     { nodeComputation :: q r
     , nodeControls :: Controls r
-    , nodeKeys :: OutputKeys k r 
+    , nodeKeys :: OutputKeys k r
     }
 
 
-
--- | a signal folding x into a, the acquiring part is nested to support self booting 
+-- | a signal folding x into a, the acquiring part is nested to support self booting
 data Signal a x = Signal a (IO (STM x))
     deriving Functor
 
 signalL f (Signal x y) = (\x' -> Signal x' y) <$> f x
 -- | definition of common controls common to input nodes and synthetic nodes
-data  Controls r = Controls 
+data Controls r = Controls
     { c_calibrationModel :: CalibrationModel r
     -- ^ the chosen calibration model
     , c_pullCalibrationCoefficient :: Signal (CalibrationCoefficient r) (CalibrationCoefficient r)
@@ -148,14 +148,14 @@ data  Controls r = Controls
     }
 
 data OutputKeys k r = OutputKeys
-    {   processingOutput :: k (ProcessingOutput r)
-    ,   coefficientOutput :: k (CalibrationCoefficient r)
+    { processingOutput :: k (ProcessingOutput r)
+    , coefficientOutput :: k (CalibrationCoefficient r)
     }
 
 newtype InputConfig r = InputConfig (Signal r r)
 
 newtype SyntheticConfig a b r = SyntheticConfig (a -> b -> r)
-    
+
 
 --------------------------------------------------------------------------------
 -- functor graph definition form a free monad
@@ -164,23 +164,23 @@ newtype SyntheticConfig a b r = SyntheticConfig (a -> b -> r)
 -- | a DSL to represent graph of synthetic parameters
 data Graph t k d a where
 
-    -- | intropduce an input
-    Input   :: Ord (Calibrated r) 
-            => Node InputConfig k r 
+    -- | introduce an input
+    Input   :: Ord (Calibrated r)
+            => Node InputConfig k r
             -> t
-            -> (d  (Calibrated r) -> a) 
+            -> (d  (Calibrated r) -> a)
             -> Graph t k d a
     -- | introduce a syntetic parameter depending on 2 others
-    Synth2  :: Ord (Calibrated r) 
-            => Node (SyntheticConfig b c) k  r 
+    Synth2  :: Ord (Calibrated r)
+            => Node (SyntheticConfig b c) k  r
             -> t
-            -> d b 
-            -> d c 
-            -> (d (Calibrated r) -> a) 
+            -> d b
+            -> d c
+            -> (d (Calibrated r) -> a)
             -> Graph t k d a
 
 deriving instance Functor (Graph t k d)
- 
+
 type GraphDSL t k d a = Free (Graph t k d) a
 
 --------------------------------------------------------------------------------
@@ -191,7 +191,6 @@ input :: Ord (Calibrated r)
       => Node (InputConfig) k r -- ^ the input configuration
       -> t
       -> Free (Graph t k d) (d (Calibrated r)) -- ^ output signal
-
 input c t = liftF $ Input c t identity
 
 synthetic :: Ord (Calibrated r)
@@ -200,11 +199,5 @@ synthetic :: Ord (Calibrated r)
        -> d b -- ^ first input signal
        -> d c -- ^ second input signal
        -> Free (Graph t k d) (d (Calibrated r)) -- ^ output signal
-
 synthetic c t a b = liftF $ Synth2 c t a b identity
-
-
-
-
-
 
