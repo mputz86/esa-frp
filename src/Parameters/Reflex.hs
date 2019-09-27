@@ -69,31 +69,6 @@ mkPullEvent kE pull = do
     pure xE
 
 
---------------------------------------------------------------------------------
--- initiators
---------------------------------------------------------------------------------
-
--- | start control acquisitions threads, add output rendering, return calibrated
--- signal
-startControls :: forall t m r.
-              ( Ord (Calibrated r)
-              , ReflexC t m
-              )
-              => Event t () -- ^  kill event
-              -> Controls r -- ^
-              -> Dynamic t r -- ^ input signal
-              -> m (Dynamic t (ProcessingOutput r), Event t (CalibrationCoefficient r))
-startControls kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) ) rD = do
-    pullCC <- liftIO $ pullCCG
-    cD <- mkPullEvent kE (atomically pullCC) >>= holdDyn c0
-    pullL <- liftIO $ pullLG
-    aD <- mkPullEvent kE (atomically pullL) >>= foldDyn updateLimits a0
-    -- produce a ProcessingOutput dynamic that fires only when rD changes
-    let crD = processNode cm <$> cD <*> aD <*> rD
-    r0 <- sample $ current crD
-    crD' <- holdDyn r0 $ tagPromptlyDyn crD $ updated rD
-    pure (crD', updated cD)
-
 
 --------------------------------------------------------------------------------
 -- interpreter, it run the initiators and render the graph in reflex language
@@ -102,48 +77,40 @@ startControls kE (Controls cm (Signal c0 pullCCG) (Signal a0 pullLG) ) rD = do
 type Cable tag k = DMap k (Map tag) -- ^ collect the outputs of different types
 type CableD t tag k = Dynamic t (Cable tag k) -- ^ the dynamic output
 type CableE t tag k = Event t (Cable tag k) -- ^ the dynamic output
-type GraphR tag t k = Graph tag k (Dynamic t) -- ^ graph specialized to Reflex instance
+type GraphR tag t k = Graph tag k (Event t) (Dynamic t) -- ^ graph specialized to Reflex instance
 
 -- | compile the instruction graph to a reflex network
 buildGraph
     :: forall a k t tag m. (GCompare k, ReflexC t m, Ord tag)
     => Event t () -- ^ kill signal
     -> Free (GraphR tag t k) a  -- ^ the graph
-    -> m (CableD t tag k, CableE t tag k) -- ^ anything relevant out of the building (dynamics ?)
-buildGraph _ (Pure x) = pure mempty
+    -> m (a, CableD t tag k) -- ^ anything relevant out of the building (dynamics ?)
+buildGraph _ (Pure x) = pure (x, mempty)
 buildGraph kE (Free y) = case y of
-    Input (Node (InputConfig (Signal r0 pullG)) cs k ) t f
-        -> liftIO pullG
-        >>= mkPullEvent kE . atomically
-        >>= holdDyn r0
-        >>= startControls kE cs
-        >>= commonPart k t f
-    Synth2 (Node (SyntheticConfig comp) cs k) t aD bD f
-        -> startControls kE cs (comp <$> aD <*> bD)
-        >>= commonPart k t f
-  where commonPart
-            :: OutputKeys k r
-            -> tag
-            -> (Dynamic t (Calibrated r) -> Free (GraphR tag t k) a)
-            -> (Dynamic t (ProcessingOutput r), Event t (CalibrationCoefficient r))
-            -> m (CableD t tag k, CableE t tag k) -- (CableD k)
-        commonPart (OutputKeys k kc)  i f (poD,cE) = do
-            (posD,csE) <- buildGraph kE $ f $ calibratedValue <$> poD
-            let posD' = (unionWithKey  (\_ -> (<>)))
-                    <$> (singleton k  . M.singleton i <$> poD) -- (singleton k . Identity $ (Output <$> chE <*> poD))
-                    <*> posD
-            let csE' = leftmost
-                    [ singleton kc  . M.singleton i <$> cE -- (singleton k . Identity $ (Output <$> chE <*> poD))
-                    , csE
-                    ]
-            pure (posD', csE')
-
+    Input io f -> do
+        rE <- mkPullEvent kE  io  
+        buildGraph kE $ f rE
+    Control io c0 f -> do
+        rD <- mkPullEvent kE  io   >>= holdDyn c0
+        buildGraph kE $ f rD
+    Output name r0 rE h f -> do
+        rD <- holdDyn  r0 rE
+        (v,oD) <- buildGraph kE f
+        pure $ (,) v $ (\r -> insertWith (<>) h (M.singleton name r)) <$> rD <*> oD
+    Validate bD rE f  -> buildGraph kE $ f $ gate (current bD) $ rE 
+    Switch sE iE cD grs f -> do 
+        let s t = case M.lookup t grs of
+                Just g -> attachWith g (current cD) iE 
+                _ -> never
+        rE <- switchHold never $ s <$> sE 
+        (x,outputD') <- buildGraph kE $ f rE
+        pure (x, outputD') 
 -- | wrap up a generic graph and output handler over any t and m to be passed as
 -- argument
 newtype G tag k = G
     (   forall t m
     .   ( ReflexC t m, Applicative (Dynamic t))
-     => ( Free (GraphR tag t k) () , (CableD t tag k, CableE t tag k) -> m ())
+     => ( IO (Free (GraphR tag t k) ()) , (CableD t tag k) -> m ())
     )
 
 
@@ -153,11 +120,13 @@ runNetwork :: (GCompare k, Ord tag)
            -> IO ()
 runNetwork g k = do
     print "Run with Reflex"
-    basicHostWithQuit 100 $ case g of
-        G (g, output) -> do
-            (kE, kIO) <- newTriggerEvent
-            liftIO $ forkIO $ k >>= kIO
-            buildGraph kE g >>= output
-            pure kE
-
+    basicHostWithQuit 100 $ do
+        case g of 
+            G (iog, output) -> do
+                g <- liftIO iog
+                (kE, kIO) <- newTriggerEvent
+                liftIO $ forkIO $ k >>= kIO
+                (_, o) <- buildGraph kE g 
+                output o
+                pure kE
 

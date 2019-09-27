@@ -96,7 +96,7 @@ extra-deps:
 #     enable: true
 #     packages: [gmp]
 
-  # allow-newer: true
+allow-newer: true
 nix:
     enable: true
     packages: [gmp]

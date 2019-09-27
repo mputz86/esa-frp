@@ -9,9 +9,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies, DeriveFunctor, BlockArguments #-}
+{-# LANGUAGE StandaloneDeriving, AllowAmbiguousTypes #-}
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies, DeriveFunctor, BlockArguments, TypeApplications #-}
 
 module Main where
 
@@ -33,8 +33,8 @@ import Control.Monad.Free
 import qualified Prelude
 import Control.Lens
 import           Protolude
+import Reflex -- (Event, Dynamic)
 
-import           Reflex
 
 --------------------------------------------------------------------------------
 -- event creation DSL, for testing
@@ -47,7 +47,7 @@ data List x a where
 event :: Int -> x -> Free (List x) ()
 event t x = liftF $ Element t x ()
 
-unroll :: Free (List x) a -> IO (STM x)
+unroll :: Free (List x) a -> IO (IO x)
 unroll y = do
     ch <- newTBChanIO 100
     let
@@ -57,133 +57,71 @@ unroll y = do
             atomically (writeTBChan ch x) 
             go f
     forkIO $ go y
-    pure $ readTBChan ch
+    pure $ atomically $ readTBChan ch
 
-noSig x = Signal x $ pure retry
 
-someInts :: Num a => Int -> Signal a a 
-someInts n = Signal 0 $ unroll $ do
-    event n 1
-    event 1000 2
-    event 1000 3
-    event 1000 4
-    event 1000 5
+someA ::  Int -> Int ->  [a] -> IO (IO a) 
+someA n d (x:xs) = unroll $ do
+    event n x
+    forM_ xs $ event d
 
-someBools :: Int -> Signal Bool Bool
-someBools n = Signal False $ unroll $ do
-    event n True
-    event 1000 False
-    event 1000 True
-    event 1000 False
+
+data OT a where
+    OTInt :: OT Int
+
+deriveGEq ''OT
+deriveGCompare ''OT
 --------------------------------------------------------------------------------
 -- example
 --------------------------------------------------------------------------------
   -- deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+calibs :: Map Text (Int -> Int -> Int)
+calibs = M.fromList
+    [ ("shift-negate", \d x -> d - x)
+    , ("shift", \d x -> d + x)
+    ]
 
-newtype ABool = ABool Bool deriving (Show)
-type instance Calibrated ABool = Bool
-type instance CalibrationCoefficient ABool = ()
-
-calibrateABool _ (ABool x) = x
-
-newtype AnInt = AnInt Int deriving (Num, Show)
-type instance Calibrated AnInt = Int
-type instance CalibrationCoefficient AnInt = Bool
-
-calibrateAInt False (AnInt x) = x
-calibrateAInt True (AnInt x) = x*2
-
-data T a where
-    TA :: T (ProcessingOutput AnInt)
-    TBC :: T Bool
-    TB :: T (ProcessingOutput ABool)
-    TNil :: T ()
-
-deriveGCompare ''T
-deriveGEq ''T
-
-
-getAInt :: Int -> Int -> Node InputConfig T AnInt
-getAInt n cn = Node 
-    do InputConfig $ someInts n
-    do Controls calibrateAInt (someBools cn) (noSig mempty) 
-    do OutputKeys TA TBC
-
-getABool :: Int -> Node InputConfig T ABool
-getABool n  = Node 
-    do InputConfig $ signalL %~ ABool $ ABool <$> someBools n
-    do Controls calibrateABool (noSig ()) (noSig mempty) 
-    do OutputKeys TB TNil
-
-addG :: Int -> Node (SyntheticConfig (Calibrated AnInt) (Calibrated AnInt)) T AnInt
-addG cn = Node 
-    do SyntheticConfig $ \x y -> AnInt $ x + y
-    do Controls calibrateAInt (someBools cn) (noSig mempty) 
-    do OutputKeys TA TBC
-
-gateG :: Int -> Node (SyntheticConfig (Calibrated ABool) (Calibrated AnInt)) T AnInt
-gateG cn = Node 
-    do SyntheticConfig 
-        do \x y -> AnInt $ case x of
-                True -> y
-                False -> 0
-    do Controls calibrateAInt (someBools cn) (noSig mempty) 
-    do OutputKeys TA TBC
-
-type Ords = (Ord (Calibrated AnInt))
-
-graphABC 
-    :: (Applicative d, Ords)
-    => GraphDSL Text T d ()
-graphABC = do
-    a <- input (getAInt 0 600) "A" 
-    b <- input (getAInt 400 1200) "B"
-    e <- input (getAInt 700 1500) "E"
-    c <- synthetic (addG 200) "C" a b 
-    d <- synthetic (addG 500) "D" a c 
-    e <- input (getAInt 700 1500) "E"
-    f <- synthetic (addG 1100) "F" a e 
-    g <- input (getABool 200) "G" 
-    _ <- synthetic (gateG 550) "H" g f
-    pure ()
+mkGraph 
+    :: (Applicative d)
+    => IO (GraphDSL Text OT e d ())
+mkGraph = do
+    i <- someA 200 300 [1 .. 20]
+    s <- someA 400 2000 ["shift-negate","shift","shift-negate","shift"]
+    c <- someA 300 1000 [1,2,1,2]
+    v <- someA 250 1200 [False, True, False, True, False]
+    pure $ do
+        -- controls
+        switchCoeffD <- control c 0
+        valControlD <- control v True
+        -- signals
+        rE <- input i
+        switchingE <- input s
+        -- network
+        vE <- validate valControlD rE
+        cE <- switchF switchingE vE switchCoeffD calibs
+        -- output
+        output "raw" 0 rE OTInt
+        output "validated" 0 vE OTInt
+        output "calibrated" 0 cE OTInt
+        pure ()
 
 prettyInputT name e = name <> ": " <> show e
 
 prettyInput k t m = prettyInputT t $ m ! k M.! t
-prettyInputM k t m = case  m ^? dmix k . ix t of
-    Nothing -> []
-    Just e -> [prettyInputT t e]
 
--- | comment out single lines to suppress output for given node
-reportT :: DMap T (Map Text) -> [Text]
+reportT :: DMap OT (Map Text) -> [Text]
 reportT m = [ "----------value--------"
-            , prettyInput TA "A" m 
-            , prettyInput TA "B" m 
-            , prettyInput TA "C" m 
-            , prettyInput TA "D" m 
-            , prettyInput TA "E" m 
-            , prettyInput TA "F" m 
-            , prettyInput TB "G" m 
-            , prettyInput TA "H" m 
+            , prettyInput OTInt "raw" m 
+            , prettyInput OTInt "validated" m 
+            , prettyInput OTInt "calibrated" m 
             ]
 
-reportCT :: DMap T (Map Text) -> [Text]
-reportCT m = concat [ ["-----coefficient------"]
-            , prettyInputM TBC "A" m 
-            , prettyInputM TBC "B" m 
-            , prettyInputM TBC "C" m 
-            , prettyInputM TBC "D" m 
-            , prettyInputM TBC "E" m 
-            , prettyInputM TBC "F" m 
-            , prettyInputM TNil "G" m 
-            , prettyInputM TBC "H" m 
-            ]
-
-reportTM (poD, cD)  = do
+reportTM :: ReflexC t m => CableD t Text OT -> m ()
+reportTM poD  = do
     performEvent_ $ liftIO . mapM_ putText . reportT <$> updated poD
-    performEvent_ $ liftIO . mapM_ putText . reportCT <$> cD
 
-test1 = runNetwork (G (graphABC, reportTM)) (threadDelay $ 10 * 10 ^ 6)
+test1 = do
+    runNetwork (G (mkGraph, reportTM)) (threadDelay $ 10 * 10 ^ 6)
 
-main :: IO ()
 main = test1
+
