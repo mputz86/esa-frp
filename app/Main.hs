@@ -68,6 +68,7 @@ someA n d (x:xs) = unroll $ do
 
 data OT a where
     OTInt :: OT Int
+    OTMInt :: OT (Maybe Int)
 
 deriveGEq ''OT
 deriveGCompare ''OT
@@ -99,10 +100,12 @@ mkGraph = do
         -- network
         vE <- validate valControlD rE
         cE <- switchF switchingE vE switchCoeffD calibs
+        diffE <- composeF cE rE (\x y -> Just $ subtract x y)
         -- output
         output "raw" 0 rE OTInt
         output "validated" 0 vE OTInt
         output "calibrated" 0 cE OTInt
+        output "absolute change" Nothing diffE OTMInt
         pure ()
 
 prettyInputT name e = name <> ": " <> show e
@@ -114,6 +117,7 @@ reportT m = [ "----------value--------"
             , prettyInput OTInt "raw" m 
             , prettyInput OTInt "validated" m 
             , prettyInput OTInt "calibrated" m 
+            , prettyInput OTMInt "absolute change" m 
             ]
 
 reportTM :: ReflexC t m => CableD t Text OT -> m ()

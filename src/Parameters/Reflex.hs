@@ -98,6 +98,11 @@ buildGraph kE (Free y) = case y of
         (v,oD) <- buildGraph kE f
         pure $ (,) v $ (\r -> insertWith (<>) h (M.singleton name r)) <$> rD <*> oD
     Validate bD rE f  -> buildGraph kE $ f $ gate (current bD) $ rE 
+    Compose aE bE g f -> do 
+        aD <- holdDyn Nothing $ Just <$> aE
+        bD <- holdDyn Nothing $ Just <$> bE
+        let cD = (\ma mb -> g <$> ma <*> mb) <$> aD <*> bD 
+        buildGraph kE $ f $ fmapMaybe identity $ updated cD 
     Switch sE iE cD grs f -> do 
         let s t = case M.lookup t grs of
                 Just g -> attachWith g (current cD) iE 
