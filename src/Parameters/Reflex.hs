@@ -35,6 +35,7 @@ import           Reflex
 import           Reflex.Host.Basic
 
 import           Text.Pretty.Simple
+import Reflex.Network
 
 
 --------------------------------------------------------------------------------
@@ -48,6 +49,9 @@ type ReflexC t m = ( PerformEvent t m
               , MonadIO m
               , MonadIO (Performable m)
               , TriggerEvent t m
+              , NotReady t m
+              , Adjustable t m
+              , PostBuild t m
               )
 
 
@@ -110,6 +114,15 @@ buildGraph kE (Free y) = case y of
         rE <- switchHold never $ s <$> sE 
         (x,outputD') <- buildGraph kE $ f rE
         pure (x, outputD') 
+    DynSwitch sE iE cD grs (f :: Event t o -> GraphDSL tag  k (Event t) (Dynamic t) a) -> do 
+        let  
+            s t = case M.lookup t grs of
+                Just g -> fst <$>  buildGraph kE (g cD iE) 
+                _ -> pure never :: m (Event t o)
+        rE <- fmap (switch . current)  $  networkHold (pure never) (s <$> sE)
+        (x,outputD') <- buildGraph kE $ f rE
+        pure (x, outputD') 
+
 -- | wrap up a generic graph and output handler over any t and m to be passed as
 -- argument
 newtype G tag k = G

@@ -87,19 +87,30 @@ mkGraph
     => IO (GraphDSL Text OT e d ())
 mkGraph = do
     i <- someA 200 300 [1 .. 20]
+    i2 <- someA 130 450 [20,19..1]
+    sd2 <- someA 130 450 $ concat $ replicate 10 [False,True]
     s <- someA 400 2000 ["shift-negate","shift","shift-negate","shift"]
     c <- someA 300 1000 [1,2,1,2]
     v <- someA 250 1200 [False, True, False, True, False]
     pure $ do
         -- controls
         switchCoeffD <- control c 0
+        switchBranchE <- inputF sd2 
         valControlD <- control v True
         -- signals
-        rE <- input i
-        switchingE <- input s
-        -- network
+        rE <- inputF i
+        r2E <- inputF i2
         vE <- validate valControlD rE
-        cE <- switchF switchingE vE switchCoeffD calibs
+        let branch1 switchCoeffD rE = do
+                -- restart the static switching :-) on every branch1 switch
+                switchingE <- inputF s
+                switchF switchingE vE switchCoeffD calibs
+            -- branch2 is a different closure (r2E vs vE i.e.)
+            branch2 _ rE = composeF rE r2E (+)
+        cE <- switchDynF switchBranchE rE switchCoeffD $ M.fromList
+            [  (True , branch1)
+            ,  (False, branch2)
+            ]
         diffE <- composeF cE rE (\x y -> Just $ subtract x y)
         -- output
         output "raw" 0 rE OTInt

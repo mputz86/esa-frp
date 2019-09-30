@@ -62,6 +62,14 @@ data Graph t k e d a where
             -> M.Map s (c -> i -> o)
             -> (e o -> a)
             -> Graph t k e d a
+    DynSwitch :: Ord s 
+            => e s
+            -> e i
+            -> d c
+            -> M.Map s (d c -> e i -> GraphDSL t k e d (e o))
+            -> (e o -> a)
+            -> Graph t k e d a
+
     Compose :: e b -> e c -> (b -> c -> r) -> (e r -> a) -> Graph t k e d a
 
 
@@ -72,11 +80,12 @@ type GraphDSL t k e d a = Free (Graph t k e d) a
 --------------------------------------------------------------------------------
 -- Graph compositional verbs
 --------------------------------------------------------------------------------
-input pull = liftF $ Input pull identity
+inputF pull = liftF $ Input pull identity
 control pull c0 = liftF $ Control pull c0 identity
 output name r0 iE tag = liftF $ Output name r0 iE tag ()
 validate gate iE = liftF $ Validate gate iE identity
 switchF selectE iE controlD calibs = liftF $ Switch selectE iE controlD calibs identity
+switchDynF selectE iE controlD calibs = liftF $ DynSwitch selectE iE controlD calibs identity
 composeF aE bE f = liftF $ Compose aE bE f identity
 --------------------------------------------------------------------------------
 -- validation synth
