@@ -21,23 +21,18 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
-- auto
 - containers
 - mtl
-- netwire
-- optics
 - protolude
 - random
 - reflex
 - reflex-host
 - stm
-- streamly
 - text
 - time
 - QuickCheck
 - stm-chans
 - free
-- optics
 - pretty-simple
 - dependent-map
 - dependent-sum

@@ -13,28 +13,22 @@
 module Parameters.Reflex where
 
 import           Control.Concurrent
-import           Control.Concurrent.STM
 import           Control.Monad.Fix
 import           Control.Monad.Free
 import           Control.Monad.Trans
 
-import qualified Data.Char              as C
 import           Data.Dependent.Map
+import           Data.GADT.Compare
 import qualified Data.Map               as M
-import qualified Data.Set               as S
-import qualified Data.Text              as T
-import           Data.Time
 
 import           Parameters.Model
 
-import qualified Prelude                (Show, show)
 
 import           Protolude
 
 import           Reflex
 import           Reflex.Host.Basic
 
-import           Text.Pretty.Simple
 import Reflex.Network
 
 

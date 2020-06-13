@@ -1,116 +1,120 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE StandaloneDeriving, AllowAmbiguousTypes #-}
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies, DeriveFunctor, BlockArguments, TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Main where
 
-import           Control.Concurrent.STM
-import           Control.Concurrent.STM.TBChan
-
-import qualified Data.Char                     as C
-import           Data.Dependent.Map
-import           Data.Dependent.Map.Lens
-import           Data.GADT.Compare
-import           Data.GADT.Compare.TH
-import qualified Data.Text                     as T
-import           Data.Time
-
-import           Parameters.Model
-import           Parameters.Reflex
-import qualified Data.Map as M
-import Control.Monad.Free
-import qualified Prelude
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TBChan
 import Control.Lens
-import           Protolude
+import Control.Monad.Free
+import qualified Data.Char as C
+import Data.Dependent.Map
+import Data.Dependent.Map.Lens
+import Data.GADT.Compare
+import Data.GADT.Compare.TH
+import qualified Data.Map as M
+import qualified Data.Text as T
+import Data.Time
+import Parameters.Model
+import Parameters.Reflex
+import Protolude
 import Reflex -- (Event, Dynamic)
-
+import qualified Prelude
 
 --------------------------------------------------------------------------------
 -- event creation DSL, for testing
 --------------------------------------------------------------------------------
 
 data List x a where
-    Element :: Int -> x -> a -> List x a
-    deriving Functor
+  Element :: Int -> x -> a -> List x a
+  deriving (Functor)
 
 event :: Int -> x -> Free (List x) ()
 event t x = liftF $ Element t x ()
 
 unroll :: Free (List x) a -> IO (IO x)
 unroll y = do
-    ch <- newTBChanIO 100
-    let
-        go (Pure _) = pure ()
-        go (Free (Element t x f)) = do
-            threadDelay (t * 1000) 
-            atomically (writeTBChan ch x) 
-            go f
-    forkIO $ go y
-    pure $ atomically $ readTBChan ch
+  ch <- newTBChanIO 100
+  let go (Pure _) = pure ()
+      go (Free (Element t x f)) = do
+        threadDelay (t * 1000)
+        atomically (writeTBChan ch x)
+        go f
+  forkIO $ go y
+  pure $ atomically $ readTBChan ch
 
-
-someA ::  Int -> Int ->  [a] -> IO (IO a) 
-someA n d (x:xs) = unroll $ do
-    event n x
-    forM_ xs $ event d
-
+someA :: Int -> Int -> [a] -> IO (IO a)
+someA n d (x : xs) = unroll $ do
+  event n x
+  forM_ xs $ event d
 
 data OT a where
-    OTInt :: OT Int
-    OTMInt :: OT (Maybe Int)
+  OTInt :: OT Int
+  OTMInt :: OT (Maybe Int)
 
 deriveGEq ''OT
 deriveGCompare ''OT
+
 --------------------------------------------------------------------------------
 -- example
 --------------------------------------------------------------------------------
-  -- deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
+-- deriving (Real, Enum, Num, Ord, Eq, Show, Integral)
 calibs :: Map Text (Int -> Int -> Int)
-calibs = M.fromList
-    [ ("shift-negate", \d x -> d - x)
-    , ("shift", \d x -> d + x)
+calibs =
+  M.fromList
+    [ ("shift-negate", \d x -> d - x),
+      ("shift", \d x -> d + x)
     ]
 
-mkGraph 
-    :: (Applicative d)
-    => IO (GraphDSL Text OT e d ())
+mkGraph ::
+  forall d e.
+  (Applicative d) =>
+  IO (GraphDSL Text OT e d ())
 mkGraph = do
-    i <- someA 200 300 [1 .. 20]
-    i2 <- someA 130 450 [20,19..1]
-    sd2 <- someA 130 450 $ concat $ replicate 10 [False,True]
-    s <- someA 400 2000 ["shift-negate","shift","shift-negate","shift"]
-    c <- someA 300 1000 [1,2,1,2]
-    v <- someA 250 1200 [False, True, False, True, False]
-    pure $ do
+  i <- someA 200 300 [1 .. 20]
+  i2 <- someA 130 450 [20, 19 .. 1]
+  sd2 <- someA 130 450 $ concat $ replicate 10 [False, True]
+  s <- someA 400 2000 ["shift-negate", "shift", "shift-negate", "shift"]
+  c <- someA 300 1000 [1, 2, 1, 2]
+  v <- someA 250 1200 [False, True, False, True, False]
+  let graph :: Applicative d => Free (Graph Text OT e d) ()
+      graph = do
         -- controls
-        switchCoeffD <- control c 0
-        switchBranchE <- inputF sd2 
-        valControlD <- control v True
+        switchCoeffDyn :: d Int <- control c 0
+        switchBranchEvent <- inputF sd2
+        validateDyn <- control v True
         -- signals
         rE <- inputF i
         r2E <- inputF i2
-        vE <- validate valControlD rE
-        let branch1 switchCoeffD rE = do
-                -- restart the static switching :-) on every branch1 switch
-                switchingE <- inputF s
-                switchF switchingE vE switchCoeffD calibs
+        vE <- validate validateDyn rE
+        let branch1 :: Applicative d => d Int -> e Int -> GraphDSL Text OT e d (e Int)
+            branch1 switchCoeffD rE = do
+              -- restart the static switching :-) on every branch1 switch
+              switchingE <- inputF s
+              switchF switchingE vE switchCoeffD calibs
             -- branch2 is a different closure (r2E vs vE i.e.)
             branch2 _ rE = composeF rE r2E (+)
-        cE <- switchDynF switchBranchE rE switchCoeffD $ M.fromList
-            [  (True , branch1)
-            ,  (False, branch2)
-            ]
+        cE <-
+          switchDynF switchBranchEvent rE switchCoeffDyn $
+            M.fromList
+              [ (True, branch1),
+                (False, branch2)
+              ]
         diffE <- composeF cE rE (\x y -> Just $ subtract x y)
         -- output
         output "raw" 0 rE OTInt
@@ -118,25 +122,27 @@ mkGraph = do
         output "calibrated" 0 cE OTInt
         output "absolute change" Nothing diffE OTMInt
         pure ()
+  pure graph
 
 prettyInputT name e = name <> ": " <> show e
 
+prettyInput :: (Show a) => OT a -> Text -> DMap OT (Map Text) -> Text
 prettyInput k t m = prettyInputT t $ m ! k M.! t
 
 reportT :: DMap OT (Map Text) -> [Text]
-reportT m = [ "----------value--------"
-            , prettyInput OTInt "raw" m 
-            , prettyInput OTInt "validated" m 
-            , prettyInput OTInt "calibrated" m 
-            , prettyInput OTMInt "absolute change" m 
-            ]
+reportT m =
+  [ "----------value--------",
+    prettyInput OTInt "raw" m,
+    prettyInput OTInt "validated" m,
+    prettyInput OTInt "calibrated" m,
+    prettyInput OTMInt "absolute change" m
+  ]
 
 reportTM :: ReflexC t m => CableD t Text OT -> m ()
-reportTM poD  = do
-    performEvent_ $ liftIO . mapM_ putText . reportT <$> updated poD
+reportTM poD = performEvent_ $ liftIO . mapM_ putText . reportT <$> updated poD
 
-test1 = do
-    runNetwork (G (mkGraph, reportTM)) (threadDelay $ 10 * 10 ^ 6)
+test1 :: IO ()
+test1 = runNetwork (G (mkGraph, reportTM)) (threadDelay $ 10 * 10 ^ 6)
 
+main :: IO ()
 main = test1
-
