@@ -1,0 +1,6 @@
+[submodule "AURIS"]
+	path = AURIS
+	url = https://github.com/oswald2/AURIS
+[submodule "prim-uniq"]
+	path = prim-uniq
+	url = https://github.com/obsidiansystems/prim-uniq
