@@ -1,28 +1,29 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGe BlockArguments #-}
+{-# LANGUAGe DeriveFunctor #-}
+{-# LANGUAGe FlexibleContexts #-}
+{-# LANGUAGe FlexibleInstances #-}
+{-# LANGUAGe GADTs #-}
+{-# LANGUAGe StandaloneDeriving #-}
+{-# LANGUAGe TypeFamilies #-}
+{-# LANGUAGe UndecidableInstances #-}
+{-# LANGUAGe NoImplicitPrelude, TemplateHaskell #-}
 
 -- |
--- Module      :  Parameters.Model
+-- Module       :  Parameters.Model
 -- Copyright   :  Paolo Veronelli, Matthias Putz, 2019
--- License     :  BSD3
+-- License      :  BSD3
 --
 -- Maintainer  :  paolo.veronelli@gmail.com
 -- Stability   :  experimental
 -- Portability :  unknown
 --
--- A model to express live parameter refinement
+-- A model to express liv Event t parameter refinement
 module Parameters.Model where
 
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Free
+import Control.Monad.Free.TH
 import Control.Monad.Trans
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -30,115 +31,141 @@ import qualified Data.Text as T
 import Data.Time
 import Protolude
 import qualified Prelude (Show, show)
+import Data.Dependent.Map (DMap)
+import Data.IntMap
+import Reflex
 
+type Cable k = DMap k IntMap -- ^ collect th Event t outputs of different types
 ---------------------------------------------------------------------------------
--- functor graph definition form a free monad
+-- functor Graph t definition form a fre Event t monad
 --------------------------------------------------------------------------------
 
--- | a DSL to represent graph of synthetic parameters
-data Graph t k e d a where
-  Input ::
-    -- | signal
-    IO r ->
-    -- | introduce an event
-    (e r -> a) ->
-    Graph t k e d a
-  Control ::
-    -- | signal
-    IO r ->
-    -- | first value
-    r ->
-    -- | introduce a dynamic
-    (d r -> a) ->
-    Graph t k e d a
+
+-- | a DSL to represent Graph t of synthetic parameters
+data Graph t input output a where
+  Input :: 
+    -- | polling action 
+    IO r -> 
+    -- | introduce r events 
+    (Event t r -> a) -> 
+    Graph t input output a
+      
+  FanCable :: 
+    -- | signal 
+     Event t (Cable input) ->
+    -- | introduce  
+    (EventSelectorG t input IntMap  -> a) -> 
+    Graph t input output a
+  FanInCable :: 
+    -- | signal 
+    EventSelectorG t input IntMap ->
+    -- | type key
+    input r -> 
+    -- | name mapping 
+    (Text -> Int) -> 
+    -- | introduce an event of type r 
+    ((Text -> Event t r) -> a) -> 
+    Graph t input output a
+  HoldEvent :: 
+    -- | boot value
+    r -> 
+    -- | event to hold 
+    Event t r -> 
+    -- | introduce a dynamic of type r
+    (Dynamic t r -> a) -> 
+    Graph t input output a
   Output ::
     -- | parameter name
-    t ->
+    Int ->
     -- | first in value
     r ->
     -- | output event
-    e r ->
-    -- | output type key
-    k r ->
+    Event t r ->
+    -- | output typ Event t key
+    output r ->
     a ->
-    Graph t k e d a
+    Graph t input output a
   Validate ::
     -- | dynamic gate
-    d Bool ->
-    -- | the event
-    e r ->
-    -- | introduce an event if passes
-    (e r -> a) ->
-    Graph t k e d a
-  -- | introduce a syntetic parameter depending on 2 others
+    Dynamic t Bool ->
+    -- | th Event t event
+    Event t r ->
+    -- | introduc Event t an Event t if passes
+    (Event t r -> a) ->
+    Graph t input output a
+  -- | introduc Event t a syntetic parameter depending on 2 others
   Switch ::
     Ord s => -- switch key
-
-    -- | event switch key
-    e s ->
+    -- | evnt switch key
+    Event t s ->
     -- | input signal
-    e i ->
+    Event t i ->
     -- | control dynamic
-    d c ->
+    Dynamic t c ->
     -- | map of switches
     M.Map s (c -> i -> o) ->
-    -- | introduce switch output
-    (e o -> a) ->
-    Graph t k e d a
+    -- | introduc Event t switch output
+    (Event t o -> a) ->
+    Graph t input output a
   DynSwitch ::
     Ord s => -- switch key
-
-    -- | event switch key
-    e s ->
+    -- | Event t switch key
+    Event t s ->
     -- | input signal
-    e i ->
+    Event t i ->
     -- | control dynamic
-    d c ->
+    Dynamic t c ->
     -- | map of switches
-    M.Map s (d c -> e i -> GraphDSL t k e d (e o)) ->
-    -- | introduce switch output
-    (e o -> a) ->
-    Graph t k e d a
+    M.Map s (Dynamic t c ->  Event t i -> GraphDSL t input output  (Event t o)) ->
+    -- | introduce dynamically switched event
+    (Event t o -> a) ->
+    Graph t input output a
   Compose ::
     -- | left signal
-    e b ->
+     Event t b ->
     -- | right signal
-    e c ->
+     Event t c ->
     -- | composing function
     (b -> c -> r) ->
-    -- | introduce composed signal
-    (e r -> a) ->
-    Graph t k e d a
+    -- | introduc Event t composed signal
+    ( Event t r -> a) ->
+    Graph t input output a
 
-deriving instance Functor (Graph t k e d)
+deriving instance Functor (Graph t input output)
 
-type GraphDSL t k e d a = Free (Graph t k e d) a
+type GraphDSL t input output a = Free (Graph t input output) a
 
 --------------------------------------------------------------------------------
--- Graph compositional verbs
+-- Graph t compositional verbs
 --------------------------------------------------------------------------------
 
-inputF :: MonadFree (Graph t k e d) m => IO r -> m (e r)
-inputF pull = liftF $ Input pull identity
+input :: MonadFree (Graph t input output) m => IO r -> m (Event t r)
+input action = liftF $ Input action identity
 
-control :: MonadFree (Graph t k e d) m => IO r -> r -> m (d r)
-control pull c0 = liftF $ Control pull c0 identity
+fanCable :: MonadFree (Graph t input output) m => Event t (Cable input) -> m (EventSelectorG t input IntMap)
+fanCable event = liftF $ FanCable event  identity
 
-output :: MonadFree (Graph t k e d) m => t -> r -> e r -> k r -> m ()
+fanInCable :: MonadFree (Graph t input output) m => EventSelectorG t input IntMap -> input r -> (Text -> Int) -> m (Text -> Event t r)
+fanInCable cable key mapping  = liftF $ FanInCable cable key mapping  identity
+
+holdEvent :: MonadFree (Graph t input output) m => r -> Event t r -> m (Dynamic t r)
+holdEvent r0 event = liftF $ HoldEvent r0 event identity 
+
+output :: MonadFree (Graph t input output) m => Int -> r -> Event t r -> output r -> m ()
 output name r0 iE tag = liftF $ Output name r0 iE tag ()
 
-validate :: MonadFree (Graph t k e d) m => d Bool -> e r -> m (e r)
+validate :: MonadFree (Graph t input output) m => Dynamic t Bool -> Event t r -> m (Event t r)
 validate gate iE = liftF $ Validate gate iE identity
 
-switchF :: (MonadFree (Graph t k e d) m, Ord s) => e s -> e i -> d c -> Map s (c -> i -> o) -> m (e o)
+switchF :: (MonadFree (Graph t input output) m, Ord s) => Event t s -> Event t i -> Dynamic t c -> Map s (c -> i -> o) -> m (Event t o)
 switchF selectE iE controlD calibs = liftF $ Switch selectE iE controlD calibs identity
 
-switchDynF :: (MonadFree (Graph t k e d) m, Ord s) => e s -> e i -> d c -> Map s (d c -> e i -> GraphDSL t k e d (e o)) -> m (e o)
+switchDynF :: (MonadFree (Graph t input output) m, Ord s) => Event t s 
+  -> Event t i -> Dynamic t c -> Map s (Dynamic t c -> Event t i -> GraphDSL t input output (Event t o)) -> m (Event t o)
 switchDynF selectE iE controlD calibs = liftF $ DynSwitch selectE iE controlD calibs identity
 
-composeF :: MonadFree (Graph t k e d) m => e b -> e c -> (b -> c -> r) -> m (e r)
+composeF :: MonadFree (Graph t input output) m => Event t b -> Event t c -> (b -> c -> r) -> m (Event t r)
 composeF aE bE f = liftF $ Compose aE bE f identity
-
 --------------------------------------------------------------------------------
 -- validation synth
 --------------------------------------------------------------------------------

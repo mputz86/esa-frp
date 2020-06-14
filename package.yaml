@@ -20,24 +20,28 @@ extra-source-files:
 description:         Please see the README on GitHub at <https://github.com/githubuser/esa-db#readme>
 
 dependencies:
+- async
 - base >= 4.7 && < 5
+- constraints-extras
 - containers
-- mtl
-- protolude
-- random
-- reflex
-- reflex-host
-- stm
-- text
-- time
-- QuickCheck
-- stm-chans
-- free
-- pretty-simple
 - dependent-map
 - dependent-sum
 - dependent-sum-template
+- free
 - lens
+- mtl
+- pretty-simple
+- protolude
+- QuickCheck
+- random
+- reflex
+- reflex-host
+- some
+- stm
+- stm-chans
+- text
+- time
+- bimap
 
 library:
   source-dirs: src
