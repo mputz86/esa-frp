@@ -34,7 +34,6 @@ resolver: lts-15.12
 #  - wai
 packages:
 - .
-- prim-uniq
 - AURIS/esa-base
 - AURIS/hashtables-mo
 
@@ -44,7 +43,9 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - github: paolino/reflex-basic-host
-  commit:  936082d1f74d36d2b50ca6329acc8b4488bdfc07
+  commit: 936082d1f74d36d2b50ca6329acc8b4488bdfc07
+- github: obsidiansystems/prim-uniq
+  commit: 401f8880a1b2045f2ad8c4714dda0a1c8c3735b4
 
 - reflex-0.6.4
 - constraints-extras-0.3.0.2@sha256:bf6884be65958e9188ae3c9e5547abfd6d201df021bff8a4704c2c4fe1e1ae5b,1784

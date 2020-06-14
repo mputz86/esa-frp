@@ -27,6 +27,7 @@ dependencies:
 - dependent-map
 - dependent-sum
 - dependent-sum-template
+- esa-base
 - free
 - lens
 - mtl
@@ -40,10 +41,9 @@ dependencies:
 - stm
 - stm-chans
 - text
+- text-short
 - time
 - bimap
-- esa-base
-- text-short
 
 library:
   source-dirs: src
@@ -62,6 +62,4 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - esa-parameters
-
-
 
