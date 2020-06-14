@@ -42,6 +42,8 @@ dependencies:
 - text
 - time
 - bimap
+- esa-base
+- text-short
 
 library:
   source-dirs: src

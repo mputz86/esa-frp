@@ -17,7 +17,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Validity where
+module Parameters.Auris.Validity where
 
 -- (Event, Dynamic)
 
