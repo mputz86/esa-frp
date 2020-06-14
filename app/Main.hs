@@ -154,15 +154,15 @@ mkGraph :: forall t.
   [InputEvent IT] ->
   IO (GraphDSL t IT OT ())
 
-mkGraph paramNameMapping inputEvents = do
-  inputEventsA <- streamInput paramNameMapping inputEvents
+mkGraph mapping inputEvents = do
+  inputEventsA <- streamInput mapping inputEvents
   let graph :: Free (Graph t IT OT) ()
       graph = do
         -- controls
         signals <- input inputEventsA >>= fanCable 
-        intSignals <- fanInCable signals ITInt paramNameMapping
-        boolSignals <- fanInCable signals ITBool paramNameMapping
-        textSignals <- fanInCable signals ITText paramNameMapping
+        intSignals <- fanInCable signals ITInt mapping
+        boolSignals <- fanInCable signals ITBool mapping
+        textSignals <- fanInCable signals ITText mapping
         switchBranchEvent <- pure $  boolSignals "switch branch"
         switchCoeffDyn <- holdEvent 0 $ intSignals  "coeffD"
         validateDyn <-  holdEvent True $ boolSignals "validateOrNot" 
@@ -187,10 +187,10 @@ mkGraph paramNameMapping inputEvents = do
               ]
         diffE <- composeF cE rE (\x y -> Just $ subtract x y)
         -- output
-        output "raw" 0 rE OTInt
-        output "validated" 0 vE OTInt
-        output "calibrated" 0 cE OTInt
-        output "absolute change" Nothing diffE OTMInt
+        output (mapping "raw") 0 rE OTInt
+        output (mapping "validated") 0 vE OTInt
+        output (mapping "calibrated") 0 cE OTInt
+        output (mapping "absolute change") Nothing diffE OTMInt
         pure ()
   pure graph
 
@@ -247,3 +247,4 @@ test2 bimap inputEvents = runNetwork
 
 {- main :: IO ()
 main = test1 -}
+main = pure ()

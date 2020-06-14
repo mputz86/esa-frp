@@ -6,7 +6,7 @@
 {-# LANGUAGe StandaloneDeriving #-}
 {-# LANGUAGe TypeFamilies #-}
 {-# LANGUAGe UndecidableInstances #-}
-{-# LANGUAGe NoImplicitPrelude, TemplateHaskell #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 -- |
 -- Module       :  Parameters.Model
@@ -20,19 +20,10 @@
 -- A model to express liv Event t parameter refinement
 module Parameters.Model where
 
-import Control.Concurrent
-import Control.Concurrent.STM
 import Control.Monad.Free
-import Control.Monad.Free.TH
-import Control.Monad.Trans
 import qualified Data.Map as M
-import qualified Data.Set as S
-import qualified Data.Text as T
-import Data.Time
 import Protolude
-import qualified Prelude (Show, show)
 import Data.Dependent.Map (DMap)
-import Data.IntMap
 import Reflex
 
 type Cable k = DMap k IntMap -- ^ collect th Event t outputs of different types
@@ -152,10 +143,10 @@ holdEvent :: MonadFree (Graph t input output) m => r -> Event t r -> m (Dynamic 
 holdEvent r0 event = liftF $ HoldEvent r0 event identity 
 
 output :: MonadFree (Graph t input output) m => Int -> r -> Event t r -> output r -> m ()
-output name r0 iE tag = liftF $ Output name r0 iE tag ()
+output name r0 iE tag' = liftF $ Output name r0 iE tag' ()
 
 validate :: MonadFree (Graph t input output) m => Dynamic t Bool -> Event t r -> m (Event t r)
-validate gate iE = liftF $ Validate gate iE identity
+validate gate' iE = liftF $ Validate gate' iE identity
 
 switchF :: (MonadFree (Graph t input output) m, Ord s) => Event t s -> Event t i -> Dynamic t c -> Map s (c -> i -> o) -> m (Event t o)
 switchF selectE iE controlD calibs = liftF $ Switch selectE iE controlD calibs identity

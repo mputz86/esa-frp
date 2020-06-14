@@ -18,7 +18,6 @@ import           Control.Monad.Free
 import           Control.Monad.Trans
 
 import           Data.Dependent.Map
-import           Data.GADT.Compare
 import qualified Data.Map               as M
 
 import           Parameters.Model
@@ -61,9 +60,9 @@ mkPullEvent
     => Event t () -- ^ kill thread event
     -> IO a -- ^ blocking data acquisition
     -> m (Event t a) -- ^ event
-mkPullEvent kE pull = do
+mkPullEvent kE pull' = do
     (xE, send) <- newTriggerEvent
-    tid <- liftIO $ forkIO $ forever $ pull >>= send
+    tid <- liftIO $ forkIO $ forever $ pull' >>= send
     performEvent_ $ liftIO (killThread tid) <$ kE
     pure xE
 
@@ -134,14 +133,14 @@ runNetwork :: (GCompare input, GCompare output)
            -> IO ()  -- ^ kill (blocking action)
            -> IO ()
 runNetwork g k = do
-    print "Run with Reflex"
+    putText "Run with Reflex"
     basicHostWithQuit 100 $ do
         case g of 
-            G (iog, output) -> do
-                g <- liftIO iog
+            G (iog, output') -> do
+                gr <- liftIO iog
                 (kE, kIO) <- newTriggerEvent
                 liftIO $ forkIO $ k >>= kIO
-                (_, o) <- buildGraph kE g 
-                output o
+                (_, o) <- buildGraph kE gr 
+                output' o
                 pure kE
 
