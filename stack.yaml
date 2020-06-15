@@ -34,20 +34,20 @@ resolver: lts-15.12
 #  - wai
 packages:
 - .
-- AURIS/esa-base
-- AURIS/hashtables-mo
+- ../AURIS/esa-base
+- ../AURIS/hashtables-mo
 
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- github: paolino/reflex-basic-host
-  commit: 936082d1f74d36d2b50ca6329acc8b4488bdfc07
+# - github: paolino/reflex-basic-host
+#   commit: 936082d1f74d36d2b50ca6329acc8b4488bdfc07
 - github: obsidiansystems/prim-uniq
   commit: 401f8880a1b2045f2ad8c4714dda0a1c8c3735b4
 
-- reflex-0.6.4
+- reflex-0.7.1.0@sha256:6d224466f0daabd44fef0fa559a09151126452bf857aeaa37692bccb259d5c5d,11227
 - constraints-extras-0.3.0.2@sha256:bf6884be65958e9188ae3c9e5547abfd6d201df021bff8a4704c2c4fe1e1ae5b,1784
 - dependent-map-0.3.1.0
 - dependent-sum-0.6.2.2

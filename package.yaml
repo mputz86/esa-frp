@@ -22,28 +22,32 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - async
 - base >= 4.7 && < 5
+- BoundedChan
 - constraints-extras
 - containers
 - dependent-map
 - dependent-sum
 - dependent-sum-template
 - esa-base
+- exception-transformers
 - free
 - lens
 - mtl
 - pretty-simple
+- primitive
 - protolude
 - QuickCheck
 - random
 - reflex
-- reflex-host
 - some
 - stm
 - stm-chans
 - text
 - text-short
 - time
+- transformers
 - bimap
+- ref-tf
 
 library:
   source-dirs: src

@@ -25,8 +25,9 @@ import           Parameters.Model
 
 import           Protolude
 
-import           Reflex
-import           Reflex.Host.Basic
+import           Reflex hiding (NotReady)
+import           Reflex.Host.Headless
+import           Reflex.NotReady.Bounded
 import qualified Data.IntMap as IM
 
 import Reflex.Network
@@ -134,7 +135,7 @@ runNetwork :: (GCompare input, GCompare output)
            -> IO ()
 runNetwork g k = do
     putText "Run with Reflex"
-    basicHostWithQuit 100 $ do
+    runHeadlessApp 100 $ do
         case g of 
             G (iog, output') -> do
                 gr <- liftIO iog
