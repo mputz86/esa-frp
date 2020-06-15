@@ -36,7 +36,6 @@ dependencies:
 - QuickCheck
 - random
 - reflex
-- reflex-host
 - some
 - stm
 - stm-chans

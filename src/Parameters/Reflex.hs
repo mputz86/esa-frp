@@ -26,7 +26,7 @@ import           Parameters.Model
 import           Protolude
 
 import           Reflex
-import           Reflex.Host.Basic
+import           Reflex.Host.Headless
 import qualified Data.IntMap as IM
 
 import Reflex.Network
@@ -43,7 +43,6 @@ type ReflexC t m = ( PerformEvent t m
               , MonadIO m
               , MonadIO (Performable m)
               , TriggerEvent t m
-              , NotReady t m
               , Adjustable t m
               , PostBuild t m
               )
@@ -134,7 +133,7 @@ runNetwork :: (GCompare input, GCompare output)
            -> IO ()
 runNetwork g k = do
     putText "Run with Reflex"
-    basicHostWithQuit 100 $ do
+    runHeadlessApp $ do
         case g of 
             G (iog, output') -> do
                 gr <- liftIO iog
