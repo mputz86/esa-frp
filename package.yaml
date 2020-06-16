@@ -43,6 +43,10 @@ dependencies:
 - text-short
 - time
 - bimap
+- ref-tf
+- BoundedChan
+- exception-transformers
+- primitive
 
 library:
   source-dirs: src
