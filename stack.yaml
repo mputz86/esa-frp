@@ -34,8 +34,8 @@ resolver: lts-15.12
 #  - wai
 packages:
 - .
-- AURIS/esa-base
-- AURIS/hashtables-mo
+- ../AURIS/esa-base
+- ../AURIS/hashtables-mo
 
 
 # Dependency packages to be pulled from upstream that are not in the resolver
